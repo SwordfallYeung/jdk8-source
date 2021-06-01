@@ -135,6 +135,8 @@ public interface Map<K,V> {
      * <tt>Integer.MAX_VALUE</tt>.
      *
      * @return the number of key-value mappings in this map
+     *
+     * 同样的，如果size超过Integer.MAX_VALUE也只会返回Integer.MAX_VALUE
      */
     int size();
 
@@ -321,6 +323,8 @@ public interface Map<K,V> {
      * operations.
      *
      * @return a set view of the keys contained in this map
+     *
+     * 对set集合的变动会影响到map，反过来也一样
      */
     Set<K> keySet();
 
@@ -338,6 +342,8 @@ public interface Map<K,V> {
      * support the <tt>add</tt> or <tt>addAll</tt> operations.
      *
      * @return a collection view of the values contained in this map
+     *
+     * 对Collection的变动会影响到map，反过来也一样
      */
     Collection<V> values();
 
@@ -356,6 +362,8 @@ public interface Map<K,V> {
      * <tt>add</tt> or <tt>addAll</tt> operations.
      *
      * @return a set view of the mappings contained in this map
+     *
+     * 对Set的变动会影响到map，反过来也一样
      */
     Set<Map.Entry<K, V>> entrySet();
 
@@ -371,6 +379,8 @@ public interface Map<K,V> {
      *
      * @see Map#entrySet()
      * @since 1.2
+     *
+     * Entry start
      */
     interface Entry<K,V> {
         /**
@@ -466,6 +476,8 @@ public interface Map<K,V> {
          * @return a comparator that compares {@link Map.Entry} in natural order on key.
          * @see Comparable
          * @since 1.8
+         *
+         * 使用默认方法对key进行比较
          */
         public static <K extends Comparable<? super K>, V> Comparator<Map.Entry<K,V>> comparingByKey() {
             return (Comparator<Map.Entry<K, V>> & Serializable)
@@ -483,6 +495,8 @@ public interface Map<K,V> {
          * @return a comparator that compares {@link Map.Entry} in natural order on value.
          * @see Comparable
          * @since 1.8
+         *
+         * 使用默认方法对Value比较
          */
         public static <K, V extends Comparable<? super V>> Comparator<Map.Entry<K,V>> comparingByValue() {
             return (Comparator<Map.Entry<K, V>> & Serializable)
@@ -501,6 +515,19 @@ public interface Map<K,V> {
          * @param  cmp the key {@link Comparator}
          * @return a comparator that compares {@link Map.Entry} by the key.
          * @since 1.8
+         *
+         * 自己传比较的方法，举个例子：
+         * Map<String, Integer> map = new HashMap<>();
+         * map.put("sorted", 2);
+         * map.put("collect", 1);
+         * map.put("each", 3);
+         * System.out.println("before sort");
+         * map.entrySet().forEach(System.out::println);
+         * System.out.println("after sort");
+         * map.entrySet()
+         *      .stream()
+         *      .sorted(Map.Entry.comparingByKey((a, b) -> a.length() - b.length()))
+         *      .collect(Collectors.toList()).forEach(System.out:println);
          */
         public static <K, V> Comparator<Map.Entry<K, V>> comparingByKey(Comparator<? super K> cmp) {
             Objects.requireNonNull(cmp);
@@ -527,6 +554,7 @@ public interface Map<K,V> {
                 (c1, c2) -> cmp.compare(c1.getValue(), c2.getValue());
         }
     }
+    //Entry end
 
     // Comparison and hashing
 
@@ -582,6 +610,8 @@ public interface Map<K,V> {
      * does not permit null keys
      * (<a href="{@docRoot}/java/util/Collection.html#optional-restrictions">optional</a>)
      * @since 1.8
+     *
+     * 获取指定key的value，没有则返回默认值
      */
     default V getOrDefault(Object key, V defaultValue) {
         V v;
@@ -614,6 +644,9 @@ public interface Map<K,V> {
      * @throws ConcurrentModificationException if an entry is found to be
      * removed during iteration
      * @since 1.8
+     *
+     * 对每个键值对操作：map.forEach((i,j) -> System.out.println(i + j))
+     * 注意这里的(i, j)的类型与你初始化map的键值类型对应，i即K，j即V
      */
     default void forEach(BiConsumer<? super K, ? super V> action) {
         Objects.requireNonNull(action);
@@ -669,6 +702,15 @@ public interface Map<K,V> {
      * @throws ConcurrentModificationException if an entry is found to be
      * removed during iteration
      * @since 1.8
+     *
+     * 传入BiFunction类型，对每个键值对进行处理，返回类型与V类型相同
+     * Map<String, Integer> map = new HashMap<>();
+     * map.put("hi", 3);
+     * map.put("hello", 4);
+     * BiFunction<String, Integer, Integer> bi = (a, b) -> b.length() + b;  //为了容易理解，这么写
+     * map.forEach((i, j) -> System.out.println(i + ":" + j));
+     * map.replaceAll(bi);
+     * map.forEach((i, j) -> System.out.println(i + ":" + j));
      */
     default void replaceAll(BiFunction<? super K, ? super V, ? extends V> function) {
         Objects.requireNonNull(function);
@@ -737,6 +779,8 @@ public interface Map<K,V> {
      *         or value prevents it from being stored in this map
      *         (<a href="{@docRoot}/java/util/Collection.html#optional-restrictions">optional</a>)
      * @since 1.8
+     *
+     * 如果为空的话，插入
      */
     default V putIfAbsent(K key, V value) {
         V v = get(key);
@@ -947,6 +991,8 @@ public interface Map<K,V> {
      *         prevents it from being stored in this map
      *         (<a href="{@docRoot}/java/util/Collection.html#optional-restrictions">optional</a>)
      * @since 1.8
+     *
+     * 如果key不存在，则通过mappingFunction生成value，并插入
      */
     default V computeIfAbsent(K key,
             Function<? super K, ? extends V> mappingFunction) {
@@ -1008,6 +1054,8 @@ public interface Map<K,V> {
      *         prevents it from being stored in this map
      *         (<a href="{@docRoot}/java/util/Collection.html#optional-restrictions">optional</a>)
      * @since 1.8
+     *
+     * 如果存在key对应的值，则通过remappingFunction来计算新的value，(vlaue不为空)然后更新，为空则删除key
      */
     default V computeIfPresent(K key,
             BiFunction<? super K, ? super V, ? extends V> remappingFunction) {
@@ -1165,6 +1213,8 @@ public interface Map<K,V> {
      *         does not support null keys or the value or remappingFunction is
      *         null
      * @since 1.8
+     *
+     * 将旧的oldValue和新的传进去value通过remappingFunction进行处理，然后更新
      */
     default V merge(K key, V value,
             BiFunction<? super V, ? super V, ? extends V> remappingFunction) {
