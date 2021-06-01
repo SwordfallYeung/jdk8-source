@@ -133,9 +133,7 @@ import java.util.function.Function;
  * @see     TreeMap
  * @see     Hashtable
  * @since   1.2
- */
-
-/**
+ *
  * 可以看到HashMap继承自AbstractMap，实现了Serializable和Cloneable。AbstractMap中的keyset()
  * 和values()方法与HashMap中的类似。Serializable接口表示HashMap实现了的序列化，Cloneable接口表示
  * 可以合法的调用clone()，如果不实现该接口而调用clone，会报cloneNotSupportedException。
@@ -237,6 +235,8 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 
     /**
      * The default initial capacity - MUST be a power of two.
+     *
+     * 默认初始化map的容量：16，即2的4次方
      */
     static final int DEFAULT_INITIAL_CAPACITY = 1 << 4; // aka 16
 
@@ -244,11 +244,15 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * The maximum capacity, used if a higher value is implicitly specified
      * by either of the constructors with arguments.
      * MUST be a power of two <= 1<<30.
+     *
+     * map的最大容量：2^30，即2的30次方
      */
     static final int MAXIMUM_CAPACITY = 1 << 30;
 
     /**
      * The load factor used when none specified in constructor.
+     *
+     * 默认的填充因子：0.75，能较好的平衡时间与空间的消耗
      */
     static final float DEFAULT_LOAD_FACTOR = 0.75f;
 
@@ -259,6 +263,8 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * than 2 and should be at least 8 to mesh with assumptions in
      * tree removal about conversion back to plain bins upon
      * shrinkage.
+     *
+     * 将链表（桶）转化成红黑树的临界值
      */
     static final int TREEIFY_THRESHOLD = 8;
 
@@ -266,6 +272,8 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * The bin count threshold for untreeifying a (split) bin during a
      * resize operation. Should be less than TREEIFY_THRESHOLD, and at
      * most 6 to mesh with shrinkage detection under removal.
+     *
+     * 将红黑树转成链表（桶）的临界值
      */
     static final int UNTREEIFY_THRESHOLD = 6;
 
@@ -274,17 +282,23 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * (Otherwise the table is resized if too many nodes in a bin.)
      * Should be at least 4 * TREEIFY_THRESHOLD to avoid conflicts
      * between resizing and treeification thresholds.
+     *
+     * 转变成树的table的最小容量，小于该值则不会进行树化
      */
     static final int MIN_TREEIFY_CAPACITY = 64;
 
     /**
      * Basic hash bin node, used for most entries.  (See below for
      * TreeNode subclass, and in LinkedHashMap for its Entry subclass.)
+     *
+     * Entry接口是在Map接口中定义的
      */
     static class Node<K,V> implements Map.Entry<K,V> {
+        // key & value 的 hash值
         final int hash;
         final K key;
         V value;
+        //指向下一个节点
         Node<K,V> next;
 
         Node(int hash, K key, V value, Node<K,V> next) {
@@ -379,6 +393,12 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 
     /**
      * Returns a power of two size for the given target capacity.
+     *
+     * tableSizeFor()，将初始化容量转化大于或等于最接近输入参数cap的2的整数次幂的数
+     *
+     * | 是或运算符，比如说 0100 | 0011 = 0111，>>> 是无符号右移，忽略符号位，空位都以0补齐，比如说
+     * 0100 >>> 2 = 0001，现在来说一下这么做的目的：
+     * 
      */
     static final int tableSizeFor(int cap) {
         int n = cap - 1;
@@ -397,17 +417,26 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * necessary. When allocated, length is always a power of two.
      * (We also tolerate length zero in some operations to allow
      * bootstrapping mechanics that are currently not needed.)
+     *
+     * hashMap实际存储数据的数组，长度总是2的幂次
+     *
+     * 可以看到，HashMap里是以Node节点数组的形式存放数据的，Node数据结构比较简单，
+     * 可以看上面Node的数据结构
      */
     transient Node<K,V>[] table;
 
     /**
      * Holds cached entrySet(). Note that AbstractMap fields are used
      * for keySet() and values().
+     *
+     * map中的键值对集合
      */
     transient Set<Map.Entry<K,V>> entrySet;
 
     /**
      * The number of key-value mappings contained in this map.
+     *
+     * map中键值对的数量
      */
     transient int size;
 
@@ -417,6 +446,8 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * the HashMap or otherwise modify its internal structure (e.g.,
      * rehash).  This field is used to make iterators on Collection-views of
      * the HashMap fail-fast.  (See ConcurrentModificationException).
+     *
+     * 用于统计map修改次数的计数器，用于fail-fast抛出ConcurrentModificationException
      */
     transient int modCount;
 
@@ -429,12 +460,15 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     // Additionally, if the table array has not been allocated, this
     // field holds the initial array capacity, or zero signifying
     // DEFAULT_INITIAL_CAPACITY.)
+    //大于该阀值，则重新进行扩容，threshold = capacity(table.length) * load factor
     int threshold;
 
     /**
      * The load factor for the hash table.
      *
      * @serial
+     *
+     * 填充因子
      */
     final float loadFactor;
 
@@ -448,6 +482,8 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * @param  loadFactor      the load factor
      * @throws IllegalArgumentException if the initial capacity is negative
      *         or the load factor is nonpositive
+     *
+     * 传初始化容量以及填充因子
      */
     public HashMap(int initialCapacity, float loadFactor) {
         if (initialCapacity < 0)
@@ -459,6 +495,10 @@ public class HashMap<K,V> extends AbstractMap<K,V>
             throw new IllegalArgumentException("Illegal load factor: " +
                                                loadFactor);
         this.loadFactor = loadFactor;
+        /**
+         * tableSizeFor()是用来将初始化容量转化大于输入参数initialCapacity且最近的2的整数次幂的数，
+         * 比如initialCapacity = 7, 那么转化后就是8.
+         */
         this.threshold = tableSizeFor(initialCapacity);
     }
 
@@ -468,6 +508,8 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      *
      * @param  initialCapacity the initial capacity.
      * @throws IllegalArgumentException if the initial capacity is negative.
+     *
+     * 传初始化容量(建议如果知道要使用的map容量，都使用这种)
      */
     public HashMap(int initialCapacity) {
         this(initialCapacity, DEFAULT_LOAD_FACTOR);
@@ -476,8 +518,11 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     /**
      * Constructs an empty <tt>HashMap</tt> with the default initial capacity
      * (16) and the default load factor (0.75).
+     *
+     * 初始化容量为16，填充因子为0.75
      */
     public HashMap() {
+        //其他成员变量也都是默认的
         this.loadFactor = DEFAULT_LOAD_FACTOR; // all other fields defaulted
     }
 
