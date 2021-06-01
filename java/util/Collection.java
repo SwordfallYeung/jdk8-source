@@ -149,6 +149,8 @@ public interface Collection<E> extends Iterable<E> {
      * contains more than <tt>Integer.MAX_VALUE</tt> elements, returns
      * <tt>Integer.MAX_VALUE</tt>.
      *
+     * 值得一提的是：如果size超过Integer.MAX_VALUE也只会返回Integer.MAX_VALUE
+     *
      * @return the number of elements in this collection
      */
     int size();
@@ -175,6 +177,8 @@ public interface Collection<E> extends Iterable<E> {
      * @throws NullPointerException if the specified element is null and this
      *         collection does not permit null elements
      *         (<a href="#optional-restrictions">optional</a>)
+     *
+     * 如果向集合里添加null，使用contains(null)，也可以返回true
      */
     boolean contains(Object o);
 
@@ -203,6 +207,9 @@ public interface Collection<E> extends Iterable<E> {
      * APIs.
      *
      * @return an array containing all of the elements in this collection
+     *
+     * 深层拷贝，修改数组的数据不会对集合里的元素产生影响。
+     * 注意：只能返回Object[]，不能强制转换其他类型，如需要转型，使用下面带泛型的方法。
      */
     Object[] toArray();
 
@@ -405,6 +412,14 @@ public interface Collection<E> extends Iterable<E> {
      *         matching element cannot be removed or if, in general, removal is not
      *         supported.
      * @since 1.8
+     *
+     * 如果满足filter，则删除，举个例子：
+     * Collection<String> myHeart = new ArrayList<>();
+     * myHeart.add("laoshi");
+     * myHeart.add("GodnessY");
+     * System.out.println("before: " + myHeart.size());
+     * myHeart.removeIf(s -> s.equals("laoshi"));
+     * System.out.println("after: " + myHeart.size());
      */
     default boolean removeIf(Predicate<? super E> filter) {
         Objects.requireNonNull(filter);
@@ -440,6 +455,8 @@ public interface Collection<E> extends Iterable<E> {
      *         or if the specified collection is null
      * @see #remove(Object)
      * @see #contains(Object)
+     *
+     * 保留C集合里的元素
      */
     boolean retainAll(Collection<?> c);
 
@@ -504,6 +521,8 @@ public interface Collection<E> extends Iterable<E> {
      *
      * @see Object#hashCode()
      * @see Object#equals(Object)
+     *
+     * 如过a.equals(b)，则hashCode()肯定相同，反之不一定
      */
     int hashCode();
 
@@ -556,6 +575,8 @@ public interface Collection<E> extends Iterable<E> {
      *
      * @return a {@code Spliterator} over the elements in this collection
      * @since 1.8
+     *
+     * 针对parallelStream()添加的方法，用于分割集合，进行并行处理
      */
     @Override
     default Spliterator<E> spliterator() {
@@ -597,6 +618,8 @@ public interface Collection<E> extends Iterable<E> {
      * @return a possibly parallel {@code Stream} over the elements in this
      * collection
      * @since 1.8
+     *
+     * 采用并行处理，使用多核CPU的特性
      */
     default Stream<E> parallelStream() {
         return StreamSupport.stream(spliterator(), true);
