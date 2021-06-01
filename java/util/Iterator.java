@@ -92,6 +92,7 @@ public interface Iterator<E> {
     default void remove() {
         throw new UnsupportedOperationException("remove");
     }
+    //此方法可用于在迭代中删除结合中的元素，如果不用Iterator，在list循环中使用remove会拋异常
 
     /**
      * Performs the given action for each remaining element until all elements
