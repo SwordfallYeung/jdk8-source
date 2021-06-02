@@ -137,6 +137,21 @@ import java.util.function.Function;
  * 可以看到HashMap继承自AbstractMap，实现了Serializable和Cloneable。AbstractMap中的keyset()
  * 和values()方法与HashMap中的类似。Serializable接口表示HashMap实现了的序列化，Cloneable接口表示
  * 可以合法的调用clone()，如果不实现该接口而调用clone，会报cloneNotSupportedException。
+ *
+ * 总结：
+ * 一些关于HashMap的特征：
+ * 1.允许key和value为null；
+ * 2.基本上和Hashtable(已弃用)相似，除了非同步以及键值可以为null；
+ * 3.不能保证顺序；
+ * 4.访问集合的时间与map的容量和键值对的大小成比例；
+ * 5.影响HashMap性能的两个变量：填充因子和初始化容量；
+ * 6.通常来说，默认的填充因子为0.75是一个时间和空间消耗的良好平衡。较高的填充因为减少了空间的消耗，但是增加了查找的时间；
+ * 7.最好能够在创建HashMap的时候指定其容量，这样的存储效率比使其存储空间不够后自动增长更高。毕竟重新调整耗费性能；
+ * 8.使用大量具有相同hashcode值的key，将降低hash表的表现，最好能实现key的comparable;
+ * 9.注意hashmap是不同步的。如果要同步请使用 Map m = Collections.synchronizedMap(new HashMap(...));
+ * 10.除了使用迭代器的remove方法外其的其他方式删除，都会抛出ConcurrentModificationException；
+ * 11.map通常情况下都是hash桶结构，但是当桶太大的时候，会转换成红黑树，可以增加在桶太大情况下的访问效率，但是大多数情况下，
+ *    结构都以桶的形式存在，所以检查是否存在树节点会增加访问方法的时间。
  */
 public class HashMap<K,V> extends AbstractMap<K,V>
     implements Map<K,V>, Cloneable, Serializable {
@@ -816,17 +831,23 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                 Node<K,V> e;
                 //将下标为j的数组赋给临时节点e
                 if ((e = oldTab[j]) != null) {
+                    //清空
                     oldTab[j] = null;
+                    //如果该节点没有指向下一个节点，则直接通过计算hash和新的容量来确定新的下标，并指向e
                     if (e.next == null)
                         newTab[e.hash & (newCap - 1)] = e;
+                    //如果为树节点，按照树节点的来拆分
                     else if (e instanceof TreeNode)
                         ((TreeNode<K,V>)e).split(this, newTab, j, oldCap);
+                    //e还有其他的节点，将该桶拆分成两份(不一定均分)
                     else { // preserve order
+                        //loHead是拆分后的，链表的头部，tail为尾部
                         Node<K,V> loHead = null, loTail = null;
                         Node<K,V> hiHead = null, hiTail = null;
                         Node<K,V> next;
                         do {
                             next = e.next;
+                            //根据e的hash值和旧的容量做位与运算是否为0来拆分，注意之前是 e.hash & (oldCap - 1)
                             if ((e.hash & oldCap) == 0) {
                                 if (loTail == null)
                                     loHead = e;
@@ -856,27 +877,35 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         }
         return newTab;
     }
+    //可以看到，resize()方法对整个数组以及桶进行了遍历，极其耗费性能，所以再次强调在我们明确知道map要用的容量的时候，使用指定初始化容量的构造函数。
 
     /**
      * Replaces all linked nodes in bin at index for given hash unless
      * table is too small, in which case resizes instead.
+     *
+     * 将桶变成红黑树
      */
     final void treeifyBin(Node<K,V>[] tab, int hash) {
         int n, index; Node<K,V> e;
+        //这里MIN_TREEIFY_CAPACITY派上了用场，即使单个桶数量达到了树化的阀值，总的容量没到，也不会进行树化
         if (tab == null || (n = tab.length) < MIN_TREEIFY_CAPACITY)
             resize();
         else if ((e = tab[index = (n - 1) & hash]) != null) {
             TreeNode<K,V> hd = null, tl = null;
             do {
+                //返回树节点 return new TreeNode<>(p.hash, p.value, next);
                 TreeNode<K,V> p = replacementTreeNode(e, null);
+                //为空说明是第一个节点，作为树的根节点
                 if (tl == null)
                     hd = p;
+                //设置树的前后节点
                 else {
                     p.prev = tl;
                     tl.next = p;
                 }
                 tl = p;
             } while ((e = e.next) != null);
+            //对整棵树进行处理，形成红黑树
             if ((tab[index] = hd) != null)
                 hd.treeify(tab);
         }
@@ -905,6 +934,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      */
     public V remove(Object key) {
         Node<K,V> e;
+        //与之前的put、get一样，remove也是调用其他的方法
         return (e = removeNode(hash(key), key, null, false, true)) == null ?
             null : e.value;
     }
@@ -912,26 +942,30 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     /**
      * Implements Map.remove and related methods
      *
-     * @param hash hash for key
+     * @param hash hash for key key的hash值
      * @param key the key
-     * @param value the value to match if matchValue, else ignored
-     * @param matchValue if true only remove if value is equal
-     * @param movable if false do not move other nodes while removing
+     * @param value the value to match if matchValue, else ignored 与下面的matchValue结合，如果matchValue为false，则忽略value
+     * @param matchValue if true only remove if value is equal 为true，则判断是否与value相等
+     * @param movable if false do not move other nodes while removing 主要跟树节点的remove有关，为false，则不移动其他的树节点
      * @return the node, or null if none
      */
     final Node<K,V> removeNode(int hash, Object key, Object value,
                                boolean matchValue, boolean movable) {
         Node<K,V>[] tab; Node<K,V> p; int n, index;
+        //老规矩，还是先判断table是否为空之类的逻辑，注意赋值操作
         if ((tab = table) != null && (n = tab.length) > 0 &&
             (p = tab[index = (n - 1) & hash]) != null) {
             Node<K,V> node = null, e; K k; V v;
+            //对下标节点进行判断，如果相同，则赋给临时节点
             if (p.hash == hash &&
                 ((k = p.key) == key || (key != null && key.equals(k))))
                 node = p;
             else if ((e = p.next) != null) {
+                //为树节点，则按照树节点的操作来进行查找并返回
                 if (p instanceof TreeNode)
                     node = ((TreeNode<K,V>)p).getTreeNode(hash, key);
                 else {
+                    //do-while循环查找
                     do {
                         if (e.hash == hash &&
                             ((k = e.key) == key ||
@@ -943,16 +977,22 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                     } while ((e = e.next) != null);
                 }
             }
+            //如果找到了key对应的node，则进行删除操作
             if (node != null && (!matchValue || (v = node.value) == value ||
                                  (value != null && value.equals(v)))) {
+                //为树节点，则进行树节点的删除操作
                 if (node instanceof TreeNode)
                     ((TreeNode<K,V>)node).removeTreeNode(this, tab, movable);
+                //如果p == node，说明该key所在的位置为数组的下标位置，所以下标位置指向下一个节点即可
                 else if (node == p)
                     tab[index] = node.next;
+                //否则的话，key在桶中，p为node的上一个节点，p.next指向node.next即可
                 else
                     p.next = node.next;
+                //修改计数器
                 ++modCount;
                 --size;
+                //钩子函数，与上同
                 afterNodeRemoval(node);
                 return node;
             }
@@ -1521,38 +1561,50 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     // iterators
 
     abstract class HashIterator {
+        //指向下一个结点
         Node<K,V> next;        // next entry to return
+        //指向当前节点
         Node<K,V> current;     // current entry
+        //迭代前的修改次数
         int expectedModCount;  // for fast-fail
+        //当前下标
         int index;             // current slot
 
         HashIterator() {
+            //注意这里，将修改计数器值赋给expectedModCount
             expectedModCount = modCount;
+            //下面一顿初始化
             Node<K,V>[] t = table;
             current = next = null;
             index = 0;
+            //在table数组中找到第一个下标不为空的节点。
             if (t != null && size > 0) { // advance to first entry
                 do {} while (index < t.length && (next = t[index++]) == null);
             }
         }
 
+        //通过判断next是否为空，来决定是否hasNext()
         public final boolean hasNext() {
             return next != null;
         }
 
+        //这里就是抛出ConcurrentModificationException的地方
         final Node<K,V> nextNode() {
             Node<K,V>[] t;
             Node<K,V> e = next;
+            //如果modCount与初始化传进去的modCount不同，则抛出并发修改的异常
             if (modCount != expectedModCount)
                 throw new ConcurrentModificationException();
             if (e == null)
                 throw new NoSuchElementException();
+            //如果一个下标对应的桶空了，则接着在数组里找其他下标不为空的桶，同时赋值给next
             if ((next = (current = e).next) == null && (t = table) != null) {
                 do {} while (index < t.length && (next = t[index++]) == null);
             }
             return e;
         }
 
+        //使用迭代器的remove不会抛出ConcurrentModificationException异常，原因如下：
         public final void remove() {
             Node<K,V> p = current;
             if (p == null)
@@ -1562,6 +1614,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
             current = null;
             K key = p.key;
             removeNode(hash(key), key, null, false, false);
+            //注意这里：对expectedModCount重新进行了赋值，所以下次比较的时候还是相同的
             expectedModCount = modCount;
         }
     }
