@@ -159,12 +159,13 @@ import java.io.IOException;
  * @see     TreeMap
  * @see     Hashtable
  * @since   1.4
- */
-
-/**
- * LinkedHashMap数据结构相比较于HashMap来说，添加了双向指针，分别指向前一个节点before和后一个节点after,
  *
+ * LinkedHashMap数据结构相比较于HashMap来说，添加了双向指针，分别指向前一个节点before
+ * 和后一个节点after，从而将所有的节点以链表的形式串联一起，从名字上来看LinkedHashMap
+ * 与HashMap有一定的联系，实际上也确实是这样，LinkedHashMap继承了HashMap，重写了HashMap
+ * 的一部分方法，从而加入了链表的实现。
  *
+ * LinkedHashMap继承自HashMap，实现了Map接口
  */
 public class LinkedHashMap<K,V>
     extends HashMap<K,V>
@@ -194,6 +195,11 @@ public class LinkedHashMap<K,V>
 
     /**
      * HashMap.Node subclass for normal LinkedHashMap entries.
+     *
+     * Entry作为基本的节点，可以看到LinkedHashMap的Entry继承自HashMap的Node，
+     * 在其基础上加上了before和after两个指针，而TreeNode作为HashMap和LinkedHashMap的树节点，
+     * 继承自LinkedHashMap的Entry，并且加上了树节点的相关指针，另外提一点：before和parent的
+     * 两个概念是不一样的，before是相对于链表来的，parent是相对于树操作来的，所以要分两个。
      */
     static class Entry<K,V> extends HashMap.Node<K,V> {
         Entry<K,V> before, after;
@@ -206,11 +212,15 @@ public class LinkedHashMap<K,V>
 
     /**
      * The head (eldest) of the doubly linked list.
+     *
+     * 用于指向双向链表的头部
      */
     transient LinkedHashMap.Entry<K,V> head;
 
     /**
      * The tail (youngest) of the doubly linked list.
+     *
+     * 用于指向双向链表的尾部
      */
     transient LinkedHashMap.Entry<K,V> tail;
 
@@ -219,6 +229,10 @@ public class LinkedHashMap<K,V>
      * for access-order, <tt>false</tt> for insertion-order.
      *
      * @serial
+     *
+     * 用来指定LinkedHashMap的迭代顺序，
+     * true则表示按照基于访问的顺序来排列，意思就是最近使用的entry,放在链表的末尾
+     * false则表示按照插入顺序
      */
     final boolean accessOrder;
 
@@ -705,6 +719,12 @@ public class LinkedHashMap<K,V>
 
     // Iterators
 
+    /**
+     * LinkedHashMap的迭代器为遍历节点提供了自己的实现——LinkedHashIterator，
+     * 对于Key、Value、Entry的3个迭代器，都继承自它。而且内部采用的遍历方式就是
+     * 在前面提到的Entry里加的新的指向下一个节点的指针after，后面我们将具体看它
+     * 的代码实现
+     */
     abstract class LinkedHashIterator {
         LinkedHashMap.Entry<K,V> next;
         LinkedHashMap.Entry<K,V> current;
