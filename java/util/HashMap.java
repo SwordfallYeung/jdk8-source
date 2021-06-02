@@ -398,7 +398,25 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      *
      * | 是或运算符，比如说 0100 | 0011 = 0111，>>> 是无符号右移，忽略符号位，空位都以0补齐，比如说
      * 0100 >>> 2 = 0001，现在来说一下这么做的目的：
-     * 
+     *
+     * 首先 >>> 和 | 的操作的目的就是把n从最高位的1以下都填充为1，以010011为例，010011 >>> 1 = 001001，
+     * 然后 001001 | 010011 = 011011，然后再把011011无符号右移两位：011011 >>> 2 = 000110, 然后
+     * 000110 | 011011 = 011111, 后面的4、8、16计算过程就都省去了，int类型为32位，所以计算到16就全部结束了，
+     * 最终得到的就是最高位及其以下的都为1，这样就能保证得到的结果肯定大于或等于原来的n且为奇数，最后再加上1，
+     * 那么肯定是：大于且最接近输入值的2的整数次幂的数。
+     *
+     * 那么为什么要先 cap - 1 呢，我们可以先思考以下，如果传进来的本身就是2的整数幂次，比如说 01000， 10进制
+     * 是8，那么如果不减，得到的结果就是16，显然不对。所以先减1的目的是cap如果恰好是2的整数次幂，那么返回的也是本身。
+     *
+     * 合起来得到这个tableSizeFor()方法的目的：返回大于或等于最接近输入参数的2的整数次幂的数。另外，JDK1.7源码用的是
+     * roundUpToPowerOf2()方法，里面用到了 >> 以及减操作，性能上来说肯本是1.8的高。
+     *
+     * 粗俗的算法：
+     * if((cap % 2) == 0){
+     *     return cap;
+     * }else{
+     *     return cap + 1;
+     * }
      */
     static final int tableSizeFor(int cap) {
         int n = cap - 1;
@@ -534,6 +552,8 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      *
      * @param   m the map whose mappings are to be placed in this map
      * @throws  NullPointerException if the specified map is null
+     *
+     * 传map转化为HashMap的构造函数
      */
     public HashMap(Map<? extends K, ? extends V> m) {
         this.loadFactor = DEFAULT_LOAD_FACTOR;
@@ -546,17 +566,22 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * @param m the map
      * @param evict false when initially constructing this map, else
      * true (relayed to method afterNodeInsertion).
+     *
+     * evict表示是不是初始化map，false表示是初始化map
      */
     final void putMapEntries(Map<? extends K, ? extends V> m, boolean evict) {
         int s = m.size();
         if (s > 0) {
             if (table == null) { // pre-size
+                //计算map的容量，键值对的数量 = 容量 * 填充因子，故容量 = 键值对的数量 / 填充因子 + 1
                 float ft = ((float)s / loadFactor) + 1.0F;
                 int t = ((ft < (float)MAXIMUM_CAPACITY) ?
                          (int)ft : MAXIMUM_CAPACITY);
+                //如果容量大于了阀值，则重新计算阀值
                 if (t > threshold)
                     threshold = tableSizeFor(t);
             }
+            //如果table已经有，且键值对数量大于了阀值，进行扩容
             else if (s > threshold)
                 resize();
             for (Map.Entry<? extends K, ? extends V> e : m.entrySet()) {
@@ -616,15 +641,20 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      */
     final Node<K,V> getNode(int hash, Object key) {
         Node<K,V>[] tab; Node<K,V> first, e; int n; K k;
+        //先是判断一通table是否为空以及根据hash找到存放的table数组的下标，并赋值给临时变量first
         if ((tab = table) != null && (n = tab.length) > 0 &&
             (first = tab[(n - 1) & hash]) != null) {
+            //总是先检查数组下标第一个节点是否满足key，满足则返回
             if (first.hash == hash && // always check first node
                 ((k = first.key) == key || (key != null && key.equals(k))))
                 return first;
+            //如果第一个与key不相等，则循环查看桶
             if ((e = first.next) != null) {
+                //检查是否为树节点，是的话采用树节点的方法来获取对应的key的值
                 if (first instanceof TreeNode)
                     return ((TreeNode<K,V>)first).getTreeNode(hash, key);
                 do {
+                    //do-while循环判断，直到找到为止
                     if (e.hash == hash &&
                         ((k = e.key) == key || (key != null && key.equals(k))))
                         return e;
@@ -665,52 +695,67 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     /**
      * Implements Map.put and related methods
      *
-     * @param hash hash for key
+     * @param hash hash for key key的hash值
      * @param key the key
      * @param value the value to put
-     * @param onlyIfAbsent if true, don't change existing value
-     * @param evict if false, the table is in creation mode.
+     * @param onlyIfAbsent if true, don't change existing value 如果为true，则在有值的时候不会更新
+     * @param evict if false, the table is in creation mode. false表示在创建map
      * @return previous value, or null if none
      */
     final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
                    boolean evict) {
         Node<K,V>[] tab; Node<K,V> p; int n, i;
+        //如果为空，则扩容。注意这里的赋值操作，关系到下面
         if ((tab = table) == null || (n = tab.length) == 0)
             n = (tab = resize()).length;
+        //如果tab对应的数组位置为空，则创建新的node，并指向它
         if ((p = tab[i = (n - 1) & hash]) == null)
+            // newNode方法就是返回Node：return new Node<>(hash, key, value, next);
             tab[i] = newNode(hash, key, value, null);
         else {
             Node<K,V> e; K k;
+            //如果比较hash值和key的值相等，说明要put的键值对已经在里面，赋值给e
             if (p.hash == hash &&
                 ((k = p.key) == key || (key != null && key.equals(k))))
                 e = p;
+            //如果p节点是树节点，则执行插入树的操作
             else if (p instanceof TreeNode)
                 e = ((TreeNode<K,V>)p).putTreeVal(this, tab, hash, key, value);
+            //不是树节点且数组中第一个也不是，则在桶中查找
             else {
                 for (int binCount = 0; ; ++binCount) {
+                    //找到了最后一个都不满足的话，则在最后插入节点。注意这里的e = p.next，赋值兼具判断都在if里了
                     if ((e = p.next) == null) {
                         p.next = newNode(hash, key, value, null);
+                        //之前field说明中的，如果桶中的数量大于树化阀值，则转化为树，第一个是-1
                         if (binCount >= TREEIFY_THRESHOLD - 1) // -1 for 1st
                             treeifyBin(tab, hash);
                         break;
                     }
+                    //在桶中找到了对应的key，而且已经在前面赋值给e，则退出循环
                     if (e.hash == hash &&
                         ((k = e.key) == key || (key != null && key.equals(k))))
                         break;
+                    //没有找到，则继续向下一个节点寻找
                     p = e;
                 }
             }
+            //上面循环中找到了e，则根据onlyIfAbsent是否为true来决定是否替换旧值
             if (e != null) { // existing mapping for key
                 V oldValue = e.value;
                 if (!onlyIfAbsent || oldValue == null)
                     e.value = value;
+                //钩子函数，用于给LinkedHashMap继承后使用，在HashMap里是空的
                 afterNodeAccess(e);
                 return oldValue;
             }
         }
+        //修改计数器+1
         ++modCount;
+        //实际大小+1，如果大于阀值，重新计算并扩容
         if (++size > threshold)
             resize();
+        //钩子函数，用于给LinkedHashMap继承后使用，在HashMap里是空的
         afterNodeInsertion(evict);
         return null;
     }
@@ -723,39 +768,53 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      * with a power of two offset in the new table.
      *
      * @return the table
+     *
+     * 通过调用resize() 对map进行扩容操作
      */
     final Node<K,V>[] resize() {
         Node<K,V>[] oldTab = table;
+        //扩容/缩容前的容量
         int oldCap = (oldTab == null) ? 0 : oldTab.length;
+        //旧的阀值
         int oldThr = threshold;
         int newCap, newThr = 0;
+        //说明之前已经初始过map
         if (oldCap > 0) {
+            //达到了最大的容量，则将阀值设为最大，并且返回旧的table
             if (oldCap >= MAXIMUM_CAPACITY) {
                 threshold = Integer.MAX_VALUE;
                 return oldTab;
             }
+            //如果两倍的旧容量小于最大的容量且旧容量大于等于默认初始化容量，则旧的阀值也扩大两倍。
+            //oldCap << 1，其实就是*2的意思
             else if ((newCap = oldCap << 1) < MAXIMUM_CAPACITY &&
                      oldCap >= DEFAULT_INITIAL_CAPACITY)
                 newThr = oldThr << 1; // double threshold
         }
+        //旧容量为0且旧阀值大于0，则赋值给新的容量(应该是针对初始化的时候指定了其容量的构造函数出现的这种情况)
         else if (oldThr > 0) // initial capacity was placed in threshold
             newCap = oldThr;
+        //这种情况就是调用无参数的构造函数
         else {               // zero initial threshold signifies using defaults
             newCap = DEFAULT_INITIAL_CAPACITY;
             newThr = (int)(DEFAULT_LOAD_FACTOR * DEFAULT_INITIAL_CAPACITY);
         }
+        //新阀值为0，则通过：新容量*填充因子 来计算
         if (newThr == 0) {
             float ft = (float)newCap * loadFactor;
             newThr = (newCap < MAXIMUM_CAPACITY && ft < (float)MAXIMUM_CAPACITY ?
                       (int)ft : Integer.MAX_VALUE);
         }
         threshold = newThr;
+        //根据新的容量来初始化table，并赋值给table
         @SuppressWarnings({"rawtypes","unchecked"})
             Node<K,V>[] newTab = (Node<K,V>[])new Node[newCap];
         table = newTab;
+        //如果旧的table里面有存放节点，则初始化给新的table
         if (oldTab != null) {
             for (int j = 0; j < oldCap; ++j) {
                 Node<K,V> e;
+                //将下标为j的数组赋给临时节点e
                 if ((e = oldTab[j]) != null) {
                     oldTab[j] = null;
                     if (e.next == null)
