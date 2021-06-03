@@ -235,6 +235,7 @@ public class LinkedHashMap<K,V>
      * false则表示按照插入顺序
      */
     final boolean accessOrder;
+    //final关键字，说明我们要在构造方法里给它初始化。
 
     // internal utilities
 
@@ -322,31 +323,45 @@ public class LinkedHashMap<K,V>
         }
     }
 
+    /**
+     * afterNodeAcce(e) 就是基于访问的顺序排列的关键
+     * 此函数执行的效果就是将最近使用的Node，放在链表的最末尾
+     * @param e
+     */
     void afterNodeAccess(Node<K,V> e) { // move node to last
         LinkedHashMap.Entry<K,V> last;
+        //仅当按照LRU原则且e不在最末尾，才执行修改链表，将e移到链表最末尾的操作
         if (accessOrder && (last = tail) != e) {
+            //将e赋值临时节点p，b是e的前一个节点，a是e的后一个节点
             LinkedHashMap.Entry<K,V> p =
                 (LinkedHashMap.Entry<K,V>)e, b = p.before, a = p.after;
-
+            //设置p的后一个节点为null，因为执行后p在链表末尾，after肯定为null
             p.after = null;
-            if (b == null)
+            //p前一个节点不存在，情况一
+            if (b == null) // ①
                 head = a;
             else
                 b.after = a;
             if (a != null)
                 a.before = b;
-            else
+            //p的后一个节点不存在，情况二
+            else // ②
                 last = b;
-            if (last == null)
+            //情况三
+            if (last == null) // ③
                 head = p;
+            //正常情况，将p设置为尾节点的准备工作，p的前一个节点为原先的last，last的after为p
             else {
                 p.before = last;
                 last.after = p;
             }
+            //将p设置为尾节点
             tail = p;
+            //修改计数器+1
             ++modCount;
         }
     }
+    //
 
     void internalWriteEntries(java.io.ObjectOutputStream s) throws IOException {
         for (LinkedHashMap.Entry<K,V> e = head; e != null; e = e.after) {
@@ -415,6 +430,12 @@ public class LinkedHashMap<K,V>
      *         access-order, <tt>false</tt> for insertion-order
      * @throws IllegalArgumentException if the initial capacity is negative
      *         or the load factor is nonpositive
+     *
+     * 跟HashMap类似的构造方法这里就不一一赘述了，里面唯一的区别就是添加了前面提到的
+     * accessOrder，默认赋值为false——按照插入顺序来排列，这里主要说明一下不同的构造方法。
+     *
+     * 多了一个 accessOrder的参数，用来指定按照LRU（全称Least Recently Used，也就是最近最少使用）
+     * 排列方式还是顺序插入的排序方式
      */
     public LinkedHashMap(int initialCapacity,
                          float loadFactor,
@@ -455,11 +476,17 @@ public class LinkedHashMap<K,V>
      * possible that the map explicitly maps the key to {@code null}.
      * The {@link #containsKey containsKey} operation may be used to
      * distinguish these two cases.
+     *
+     * LinkedHashMap的get方法，调用HashMap的getNode方法后，对accessOrder的值进行了判断
+     * accessOrder为true则表示按照基于访问的顺序来排列，意思就是最近使用的entry，放在
+     * 链表的最末尾。
      */
     public V get(Object key) {
         Node<K,V> e;
+        //调用HashMap的getNode的方法
         if ((e = getNode(hash(key), key)) == null)
             return null;
+        //在取值后对参数accessOrder进行判断，如果为true，执行afterNodeAccess
         if (accessOrder)
             afterNodeAccess(e);
         return e.value;
