@@ -239,12 +239,19 @@ public class LinkedHashMap<K,V>
 
     // internal utilities
 
+    /**
+     * 顾名思义就是把新加的节点放在链表的最后面
+     */
     // link at the end of list
     private void linkNodeLast(LinkedHashMap.Entry<K,V> p) {
+        //将tail给临时变量last
         LinkedHashMap.Entry<K,V> last = tail;
+        //把new的Entry给tail
         tail = p;
+        //若没有last，说明p是第一个节点，head=p
         if (last == null)
             head = p;
+        //否则就做准备工作
         else {
             p.before = last;
             last.after = p;
@@ -273,7 +280,13 @@ public class LinkedHashMap<K,V>
         head = tail = null;
     }
 
+    /**
+     * LinkedHashMap的put方法调用的还是HashMap里的put，不同的是重写了里面的部分方法，
+     * LinkedHashMap将其中newNode方法以及之前设置下的钩子方法 aterNodeAccesss和
+     * afterNodeInsertion进行了重写，从而实现了加入链表的目的
+     */
     Node<K,V> newNode(int hash, K key, V value, Node<K,V> e) {
+        //秘密就在于new的是自己的Entry类，然后调用了linkedNodeLast
         LinkedHashMap.Entry<K,V> p =
             new LinkedHashMap.Entry<K,V>(hash, key, value, e);
         linkNodeLast(p);
@@ -288,6 +301,7 @@ public class LinkedHashMap<K,V>
         return t;
     }
 
+    //这里笔者把TreeNode的重写也加了进来，因为putTreeVal里由调用这个
     TreeNode<K,V> newTreeNode(int hash, K key, V value, Node<K,V> next) {
         TreeNode<K,V> p = new TreeNode<K,V>(hash, key, value, next);
         linkNodeLast(p);
@@ -301,10 +315,16 @@ public class LinkedHashMap<K,V>
         return t;
     }
 
+    /**
+     * remove里面，设计者也设置了一个钩子方法：
+     */
     void afterNodeRemoval(Node<K,V> e) { // unlink
+        //与afterNodeAccess一样，记录e的前后节点b,a
         LinkedHashMap.Entry<K,V> p =
             (LinkedHashMap.Entry<K,V>)e, b = p.before, a = p.after;
+        //p已删除，前后指针都设置为null，便于GC回收
         p.before = p.after = null;
+        //与afterNodeAccess类似，一顿判断，然后b，a互为前后节点
         if (b == null)
             head = a;
         else
@@ -315,6 +335,8 @@ public class LinkedHashMap<K,V>
             a.before = b;
     }
 
+    //插入后把最老的Entry删除，不过removeEldetEntry总是返回false，所以不会删除，
+    // 估计又是一个钩子方法给子类用的
     void afterNodeInsertion(boolean evict) { // possibly remove eldest
         LinkedHashMap.Entry<K,V> first;
         if (evict && (first = head) != null && removeEldestEntry(first)) {
@@ -361,7 +383,11 @@ public class LinkedHashMap<K,V>
             ++modCount;
         }
     }
-    //
+    //下面来简单说明下：
+    //正常情况下：查询的p在链表中间，那么将p设置到末尾后，它原先的前节点b和后节点a就变成了前后节点。
+    //情况一：p为头部，前一个节点b不存在，那么考虑到p要放到最后面，则设置p的后一个节点a为head;
+    //情况二：p为尾部，后一个节点a不存在，那么考虑到统一操作，设置last为b;
+    //情况三：p为链表里的第一个节点，head=p;
 
     void internalWriteEntries(java.io.ObjectOutputStream s) throws IOException {
         for (LinkedHashMap.Entry<K,V> e = head; e != null; e = e.after) {
@@ -753,11 +779,15 @@ public class LinkedHashMap<K,V>
      * 的代码实现
      */
     abstract class LinkedHashIterator {
+        //记录下一个Entry
         LinkedHashMap.Entry<K,V> next;
+        //记录当前的Entry
         LinkedHashMap.Entry<K,V> current;
+        //记录是否发生了迭代过程中的修改
         int expectedModCount;
 
         LinkedHashIterator() {
+            //初始化的时候把head给next
             next = head;
             expectedModCount = modCount;
             current = null;
@@ -767,6 +797,7 @@ public class LinkedHashMap<K,V>
             return next != null;
         }
 
+        //这里采用的是链表方法的遍历方式，
         final LinkedHashMap.Entry<K,V> nextNode() {
             LinkedHashMap.Entry<K,V> e = next;
             if (modCount != expectedModCount)
