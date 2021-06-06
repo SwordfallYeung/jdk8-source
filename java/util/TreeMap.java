@@ -106,6 +106,9 @@ import java.util.function.Consumer;
  * @see Comparator
  * @see Collection
  * @since 1.2
+ *
+ * TreeMap实现了NavigableMap接口，而NavigableMap继承自SortedMap，由名字可以看出，只是一个用来实现
+ * 排序的接口。而这也是为什么TreeMap能够实现排序的原因。
  */
 
 public class TreeMap<K,V>

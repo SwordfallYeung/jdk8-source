@@ -108,6 +108,13 @@ package java.util;
  * @see Collection
  * @see ClassCastException
  * @since 1.2
+ *
+ * SortedMap的接口比较简单，没有很特别的地方，唯一比较特别的就是返回Comparator这个接口，
+ * 可以设想实现排序功能的秘密或许就藏在此处。
+ *
+ * 下面让我们看一下Comparator和Comparable接口，两者之间有点关联，可以理解为Comparable自带了
+ * 比较功能，而Comparator是赋予没有比较能力的对象一种比较能力。举个简单例子：面对一道计算题，
+ * 小明天生口算能力很强，看一眼就能算出来答案。而小李没有这种能力，需要借助计算器才能得出答案。
  */
 
 public interface SortedMap<K,V> extends Map<K,V> {

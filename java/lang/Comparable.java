@@ -132,6 +132,10 @@ public interface Comparable<T> {
      * @throws NullPointerException if the specified object is null
      * @throws ClassCastException if the specified object's type prevents it
      *         from being compared to this object.
+     *
+     * Comparable接口只有一个方法 compareTo
+     *
+     * 如果小于0，返回负数；等于0，返回0,；大于0返回正数
      */
     public int compareTo(T o);
 }

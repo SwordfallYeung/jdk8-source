@@ -146,6 +146,8 @@ public interface Comparator<T> {
      *         comparator does not permit null arguments
      * @throws ClassCastException if the arguments' types prevent them from
      *         being compared by this comparator.
+     *
+     * 核心方法，用来比较两个对象，如果o1小于o2，返回负数；等于o2，返回0；大于o2返回正数
      */
     int compare(T o1, T o2);
 
@@ -170,8 +172,12 @@ public interface Comparator<T> {
      *          comparator.
      * @see Object#equals(Object)
      * @see Object#hashCode()
+     *
+     * 好像很少用到，一般都用对象自带的equals
      */
     boolean equals(Object obj);
+
+    /**------------------------下面的都是JDK1.8新增的接口-----------------------*/
 
     /**
      * Returns a comparator that imposes the reverse ordering of this
@@ -180,6 +186,8 @@ public interface Comparator<T> {
      * @return a comparator that imposes the reverse ordering of this
      *         comparator.
      * @since 1.8
+     *
+     * 返回反向排序比较器
      */
     default Comparator<T> reversed() {
         return Collections.reverseOrder(this);
@@ -209,6 +217,8 @@ public interface Comparator<T> {
      *         other comparator
      * @throws NullPointerException if the argument is null.
      * @since 1.8
+     *
+     * 根据名字知道，先进行compare，再进行一次比较
      */
     default Comparator<T> thenComparing(Comparator<? super T> other) {
         Objects.requireNonNull(other);
@@ -279,6 +289,8 @@ public interface Comparator<T> {
      * @see #comparingInt(ToIntFunction)
      * @see #thenComparing(Comparator)
      * @since 1.8
+     *
+     * 对int类型的key进行比较
      */
     default Comparator<T> thenComparingInt(ToIntFunction<? super T> keyExtractor) {
         return thenComparing(comparingInt(keyExtractor));
@@ -351,6 +363,8 @@ public interface Comparator<T> {
      *         Comparable} objects.
      * @see Comparable
      * @since 1.8
+     *
+     * 返回正常顺序的比较器
      */
     @SuppressWarnings("unchecked")
     public static <T extends Comparable<? super T>> Comparator<T> naturalOrder() {
