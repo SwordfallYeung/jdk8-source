@@ -293,8 +293,11 @@ public class TreeMap<K,V>
      * @throws NullPointerException if the specified key is null
      *         and this map uses natural ordering, or its comparator
      *         does not permit null keys
+     *
+     * 对map来说，根据key来获取value几乎是最常见的操作，下面我们来看一下
      */
     public V get(Object key) {
+        //内部调用了getEntry方法。
         Entry<K,V> p = getEntry(key);
         return (p==null ? null : p.value);
     }
@@ -360,15 +363,20 @@ public class TreeMap<K,V>
      * @throws NullPointerException if the specified key is null
      *         and this map uses natural ordering, or its comparator
      *         does not permit null keys
+     *
+     *
      */
     final Entry<K,V> getEntry(Object key) {
         // Offload comparator-based version for sake of performance
+        // 如果有比较器，则调用通过比较器的来比较key的方法
         if (comparator != null)
             return getEntryUsingComparator(key);
         if (key == null)
             throw new NullPointerException();
         @SuppressWarnings("unchecked")
+            // 获取key的Comparable接口
             Comparable<? super K> k = (Comparable<? super K>) key;
+        //从根节点开始比较，根据二叉树的形式，小的往左树找，大的往右树找，直到找到返回
         Entry<K,V> p = root;
         while (p != null) {
             int cmp = k.compareTo(p.key);
@@ -556,7 +564,9 @@ public class TreeMap<K,V>
      */
     public V put(K key, V value) {
         Entry<K,V> t = root;
+        // 根节点为空，则进行添加根节点并初始化参数
         if (t == null) {
+            // 用来进行类型检查
             compare(key, key); // type (and possibly null) check
 
             root = new Entry<>(key, value, null);
@@ -567,8 +577,10 @@ public class TreeMap<K,V>
         int cmp;
         Entry<K,V> parent;
         // split comparator and comparable paths
+        // 与get类型，分离comparator与comparable的比较
         Comparator<? super K> cpr = comparator;
         if (cpr != null) {
+            //循环查找key，如果找到则替换value，没有则记录其parent，后面进行插入
             do {
                 parent = t;
                 cmp = cpr.compare(key, t.key);
@@ -585,6 +597,7 @@ public class TreeMap<K,V>
                 throw new NullPointerException();
             @SuppressWarnings("unchecked")
                 Comparable<? super K> k = (Comparable<? super K>) key;
+            // 循环查找key，如果找到则替换value，没有则记录其parent，后面进行输入
             do {
                 parent = t;
                 cmp = k.compareTo(t.key);
@@ -596,16 +609,19 @@ public class TreeMap<K,V>
                     return t.setValue(value);
             } while (t != null);
         }
+        //创建节点，然后比较与parent的大小，小放在左节点，大放在右节点
         Entry<K,V> e = new Entry<>(key, value, parent);
         if (cmp < 0)
             parent.left = e;
         else
             parent.right = e;
+        //对红黑树进行修复
         fixAfterInsertion(e);
         size++;
         modCount++;
         return null;
     }
+    // put的逻辑还是比较清晰的，关键在于fixAfterInsertion对插入节点后的红黑树进行修复，维护其平衡
 
     /**
      * Removes the mapping for this key from this TreeMap if present.
@@ -2578,10 +2594,10 @@ public class TreeMap<K,V>
          */
         // hi >= lo 说明子树已经构造完成
         if (hi < lo) return null;
-
+        // 取中间位置，无符号右移，相当于除2
         int mid = (lo + hi) >>> 1;
-
         Entry<K,V> left  = null;
+        // 递归构造左节点
         if (lo < mid)
             left = buildFromSorted(level+1, lo, mid - 1, redLevel,
                                    it, str, defaultVal);
@@ -2589,6 +2605,7 @@ public class TreeMap<K,V>
         // extract key and/or value from iterator or stream
         K key;
         V value;
+        // 通过迭代器获取key, value
         if (it != null) {
             if (defaultVal==null) {
                 Map.Entry<?,?> entry = (Map.Entry<?,?>)it.next();
@@ -2598,22 +2615,24 @@ public class TreeMap<K,V>
                 key = (K)it.next();
                 value = defaultVal;
             }
+        // 通过流来读取key, value
         } else { // use stream
             key = (K) str.readObject();
             value = (defaultVal != null ? defaultVal : (V) str.readObject());
         }
-
+        // 构建节点
         Entry<K,V> middle =  new Entry<>(key, value, null);
 
         // color nodes in non-full bottommost level red
+        // level从0开始的，所以上述9个节点，计算出来的是3，实际上就是代表的第4层
         if (level == redLevel)
             middle.color = RED;
-
+        // 如果存在的话，设置左节点
         if (left != null) {
             middle.left = left;
             left.parent = middle;
         }
-
+        // 递归构造右节点
         if (mid < hi) {
             Entry<K,V> right = buildFromSorted(level+1, mid+1, hi, redLevel,
                                                it, str, defaultVal);
@@ -2623,6 +2642,7 @@ public class TreeMap<K,V>
 
         return middle;
     }
+    // buildFromSorted能这么构造是因为这是一个已经排序好的map
 
     /**
      * Find the level down to which to assign all nodes BLACK.  This is the
