@@ -109,6 +109,14 @@ import java.util.function.Consumer;
  *
  * TreeMap实现了NavigableMap接口，而NavigableMap继承自SortedMap，由名字可以看出，只是一个用来实现
  * 排序的接口。而这也是为什么TreeMap能够实现排序的原因。
+ *
+ * TreeMap的内部实现就是一个红黑树
+ * 对于红黑树的定义：
+ * 1.节点是红色或黑色；
+ * 2.根是黑色；
+ * 3.所有叶子都是黑色（叶子是NIL节点）；
+ * 4.每个红色节点必须有两个黑色的子节点；（从每个叶子到根的所有路径上不能有两个连续的红色节点。）
+ * 5.从任一节点到其每个叶子的所有简单路径都包含相同数目的黑色节点。
  */
 
 public class TreeMap<K,V>
@@ -120,18 +128,25 @@ public class TreeMap<K,V>
      * null if it uses the natural ordering of its keys.
      *
      * @serial
+     *
+     * Key的比较器，用作排序
      */
     private final Comparator<? super K> comparator;
 
+    //树的根节点
     private transient Entry<K,V> root;
 
     /**
      * The number of entries in the tree
+     *
+     * 树的大小
      */
     private transient int size = 0;
 
     /**
      * The number of structural modifications to the tree.
+     *
+     * 修改计数器
      */
     private transient int modCount = 0;
 
@@ -164,6 +179,8 @@ public class TreeMap<K,V>
      * @param comparator the comparator that will be used to order this map.
      *        If {@code null}, the {@linkplain Comparable natural
      *        ordering} of the keys will be used.
+     *
+     * 允许用户自定义比较器进行key的排序
      */
     public TreeMap(Comparator<? super K> comparator) {
         this.comparator = comparator;
@@ -314,8 +331,10 @@ public class TreeMap<K,V>
      */
     public void putAll(Map<? extends K, ? extends V> map) {
         int mapSize = map.size();
+        //判断map是否SortedMap，不是则采用AbstractMap的putAll
         if (size==0 && mapSize!=0 && map instanceof SortedMap) {
             Comparator<?> c = ((SortedMap<?,?>)map).comparator();
+            //同为null或者不为null，类型相同，则进入有序map的构造
             if (c == comparator || (c != null && c.equals(comparator))) {
                 ++modCount;
                 try {
@@ -786,6 +805,8 @@ public class TreeMap<K,V>
      * Fields initialized to contain an instance of the entry set view
      * the first time this view is requested.  Views are stateless, so
      * there's no reason to create more than one.
+     *
+     * 返回map的Entry视图
      */
     private transient EntrySet entrySet;
     private transient KeySet<K> navigableKeySet;
@@ -2044,7 +2065,7 @@ public class TreeMap<K,V>
 
 
     // Red-black mechanics
-
+    // 定义红黑树的颜色
     private static final boolean RED   = false;
     private static final boolean BLACK = true;
 
@@ -2489,25 +2510,32 @@ public class TreeMap<K,V>
      * to calling this method.
      *
      * @param size the number of keys (or key-value pairs) to be read from
-     *        the iterator or stream
+     *        the iterator or stream                                  map里键值对的数量
      * @param it If non-null, new entries are created from entries
-     *        or keys read from this iterator.
+     *        or keys read from this iterator.                        传入的map的entries迭代器
      * @param str If non-null, new entries are created from keys and
      *        possibly values read from this stream in serialized form.
-     *        Exactly one of it and str should be non-null.
+     *        Exactly one of it and str should be non-null.           如果不为空，则从流里读取key-value
      * @param defaultVal if non-null, this default value is used for
      *        each value in the map.  If null, each value is read from
-     *        iterator or stream, as described above.
+     *        iterator or stream, as described above.                  见名知意，不为空，则value都用这个值
      * @throws java.io.IOException propagated from stream reads. This cannot
      *         occur if str is null.
      * @throws ClassNotFoundException propagated from readObject.
      *         This cannot occur if str is null.
+     *
+     * 被TreeMap构造函数调用
      */
     private void buildFromSorted(int size, Iterator<?> it,
                                  java.io.ObjectInputStream str,
                                  V defaultVal)
         throws  java.io.IOException, ClassNotFoundException {
         this.size = size;
+        //我们先来分析一下 computeRedLevel方法：它的作用是用来计算完全二叉树的层数。
+        //那么计算这个高度有什么好处呢，如果一个树有9个节点，那么我们构造红黑树的时候，
+        //只要把前面3层的节点都设置为黑色，第四层的节点设置为红色，则构造完的树，就是
+        //红黑树，满足前面提到的红黑树的5个条件。而实现的关键就是找到要构造树的完全二
+        //叉树的层数。
         root = buildFromSorted(0, 0, size-1, computeRedLevel(size),
                                it, str, defaultVal);
     }
@@ -2519,12 +2547,16 @@ public class TreeMap<K,V>
      * It is assumed that the comparator and size fields of the TreeMap are
      * already set prior to calling this method.  (It ignores both fields.)
      *
-     * @param level the current level of tree. Initial call should be 0.
-     * @param lo the first element index of this subtree. Initial should be 0.
-     * @param hi the last element index of this subtree.  Initial should be
+     * @param level the current level of tree. Initial call should be 0.        当前树的层数，注意：是从0层开始
+     * @param lo the first element index of this subtree. Initial should be 0.  子树第一个元素的索引
+     * @param hi the last element index of this subtree.  Initial should be     子树最后一个元素的索引
      *        size-1.
-     * @param redLevel the level at which nodes should be red.
+     * @param redLevel the level at which nodes should be red.                   上述红节点所在层数
      *        Must be equal to computeRedLevel for tree of this size.
+     *
+     *                                                                       it   传入的map的entries迭代器
+     *                                                                       str  如果不为空，则从流里读取key-value
+     *                                                                defaultVal  见名知意，不为空，则value都用这个值
      */
     @SuppressWarnings("unchecked")
     private final Entry<K,V> buildFromSorted(int level, int lo, int hi,
@@ -2544,7 +2576,7 @@ public class TreeMap<K,V>
          * They are not actually indexed, we just proceed sequentially,
          * ensuring that items are extracted in corresponding order.
          */
-
+        // hi >= lo 说明子树已经构造完成
         if (hi < lo) return null;
 
         int mid = (lo + hi) >>> 1;
@@ -2600,6 +2632,10 @@ public class TreeMap<K,V>
      * computed by finding the number of splits needed to reach the zeroeth
      * node.  (The answer is ~lg(N), but in any case must be computed by same
      * quick O(lg(N)) loop.)
+     *
+     * 用来计算完全二叉树的层数
+     * 把根节点索引看为0，那么高度为2的树的最后一个节点的索引为2，类推高度为3的最后一个节点为6，
+     * 满足 m = (m + 1) * 2，即索引2 = （索引0 + 1）* 2；索引6 = （索引2 + 1） * 2；
      */
     private static int computeRedLevel(int sz) {
         int level = 0;
