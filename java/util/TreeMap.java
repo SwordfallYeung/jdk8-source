@@ -2295,43 +2295,54 @@ public class TreeMap<K,V>
 
     /** From CLR */
     private void fixAfterInsertion(Entry<K,V> x) {
+        //约定插入的节点都是红节点
         x.color = RED;
-
+        //x本身红色，如果其父节点也是红色，违反规则4，进行循环处理
         while (x != null && x != root && x.parent.color == RED) {
+            //父节点是左节点
             if (parentOf(x) == leftOf(parentOf(parentOf(x)))) {
+                //获取服节点的右兄弟y
                 Entry<K,V> y = rightOf(parentOf(parentOf(x)));
+                //p为左节点，y为红色 ①
                 if (colorOf(y) == RED) {
                     setColor(parentOf(x), BLACK);
                     setColor(y, BLACK);
                     setColor(parentOf(parentOf(x)), RED);
                     x = parentOf(parentOf(x));
                 } else {
+                    // p为左节点，y为黑，x为右节点 ②
                     if (x == rightOf(parentOf(x))) {
                         x = parentOf(x);
                         rotateLeft(x);
                     }
+                    // p为左节点，y为红，x为左节点 ③
                     setColor(parentOf(x), BLACK);
                     setColor(parentOf(parentOf(x)), RED);
                     rotateRight(parentOf(parentOf(x)));
                 }
+            //父节点是右节点
             } else {
                 Entry<K,V> y = leftOf(parentOf(parentOf(x)));
+                // p为右节点，y为红色 ④
                 if (colorOf(y) == RED) {
                     setColor(parentOf(x), BLACK);
                     setColor(y, BLACK);
                     setColor(parentOf(parentOf(x)), RED);
                     x = parentOf(parentOf(x));
                 } else {
+                    //p为右节点，y为黑色，x为左节点 ⑤
                     if (x == leftOf(parentOf(x))) {
                         x = parentOf(x);
                         rotateRight(x);
                     }
+                    //p为右节点，y为黑色，x为右节点 ⑥
                     setColor(parentOf(x), BLACK);
                     setColor(parentOf(parentOf(x)), RED);
                     rotateLeft(parentOf(parentOf(x)));
                 }
             }
         }
+        //约定根节点都是黑节点
         root.color = BLACK;
     }
 
@@ -2573,6 +2584,7 @@ public class TreeMap<K,V>
      *                                                                       it   传入的map的entries迭代器
      *                                                                       str  如果不为空，则从流里读取key-value
      *                                                                defaultVal  见名知意，不为空，则value都用这个值
+     *  递归理解不透彻
      */
     @SuppressWarnings("unchecked")
     private final Entry<K,V> buildFromSorted(int level, int lo, int hi,
