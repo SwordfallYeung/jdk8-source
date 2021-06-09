@@ -638,11 +638,13 @@ public class TreeMap<K,V>
      *         does not permit null keys
      */
     public V remove(Object key) {
+        //获取Entry
         Entry<K,V> p = getEntry(key);
         if (p == null)
             return null;
 
         V oldValue = p.value;
+        //删除的关键方法
         deleteEntry(p);
         return oldValue;
     }
@@ -2184,15 +2186,22 @@ public class TreeMap<K,V>
 
     /**
      * Returns the successor of the specified Entry, or null if no such.
+     *
+     * 查找t的后续节点
+     *
+     * 该方法目的是找到最接近且大于t的节点，这样的话，直接用来替换掉t，
+     * 对原有的树结构变动最小
      */
     static <K,V> TreeMap.Entry<K,V> successor(Entry<K,V> t) {
         if (t == null)
             return null;
+        //从t的右子树中找到最小的
         else if (t.right != null) {
             Entry<K,V> p = t.right;
             while (p.left != null)
                 p = p.left;
             return p;
+        //当右子树为空时，向上找到第一个左父节点
         } else {
             Entry<K,V> p = t.parent;
             Entry<K,V> ch = t;
@@ -2348,6 +2357,8 @@ public class TreeMap<K,V>
 
     /**
      * Delete node p, and then rebalance the tree.
+     *
+     * 在看deleteEntry之前，我们先来看下successor方法，为其做准备
      */
     private void deleteEntry(Entry<K,V> p) {
         modCount++;
@@ -2355,6 +2366,7 @@ public class TreeMap<K,V>
 
         // If strictly internal, copy successor's element to p and then make p
         // point to successor.
+        // ① p的左右子树都不为空，找到右子树中最小的节点，将key、value赋给p，然后p指向后续节点
         if (p.left != null && p.right != null) {
             Entry<K,V> s = successor(p);
             p.key = s.key;
@@ -2363,8 +2375,9 @@ public class TreeMap<K,V>
         } // p has 2 children
 
         // Start fixup at replacement node, if it exists.
+        //获取p中不为空的节点，也可能两个都是空的
         Entry<K,V> replacement = (p.left != null ? p.left : p.right);
-
+        //①替换的节点有一个子节点
         if (replacement != null) {
             // Link replacement to parent
             replacement.parent = p.parent;
@@ -2376,22 +2389,27 @@ public class TreeMap<K,V>
                 p.parent.right = replacement;
 
             // Null out links so they are OK to use by fixAfterDeletion.
+            //清空链接，以便可以使用fixAfterDeletion和内存回收
             p.left = p.right = p.parent = null;
 
             // Fix replacement
             if (p.color == BLACK)
                 fixAfterDeletion(replacement);
+        // ② 删除的节点是根节点
         } else if (p.parent == null) { // return if we are the only node.
             root = null;
+        // ③ 替换的节点是空节点
         } else { //  No children. Use self as phantom replacement and unlink.
             if (p.color == BLACK)
                 fixAfterDeletion(p);
 
             if (p.parent != null) {
                 if (p == p.parent.left)
+                    //清空链接，方便GC
                     p.parent.left = null;
                 else if (p == p.parent.right)
                     p.parent.right = null;
+                //清空链接，方便GC
                 p.parent = null;
             }
         }
@@ -2400,33 +2418,39 @@ public class TreeMap<K,V>
     /** From CLR */
     private void fixAfterDeletion(Entry<K,V> x) {
         while (x != root && colorOf(x) == BLACK) {
+            //x是左节点且为黑色
             if (x == leftOf(parentOf(x))) {
+                //获取兄弟右节点
                 Entry<K,V> sib = rightOf(parentOf(x));
-
+                //① 兄弟右节点sib颜色是红色
                 if (colorOf(sib) == RED) {
                     setColor(sib, BLACK);
                     setColor(parentOf(x), RED);
                     rotateLeft(parentOf(x));
                     sib = rightOf(parentOf(x));
                 }
-
+                //② sib的子节点都是黑色
                 if (colorOf(leftOf(sib))  == BLACK &&
                     colorOf(rightOf(sib)) == BLACK) {
                     setColor(sib, RED);
                     x = parentOf(x);
+                //sib子节点不全为黑
                 } else {
+                    //③ sib右子节点为黑色
                     if (colorOf(rightOf(sib)) == BLACK) {
                         setColor(leftOf(sib), BLACK);
                         setColor(sib, RED);
                         rotateRight(sib);
                         sib = rightOf(parentOf(x));
                     }
+                    // ④
                     setColor(sib, colorOf(parentOf(x)));
                     setColor(parentOf(x), BLACK);
                     setColor(rightOf(sib), BLACK);
                     rotateLeft(parentOf(x));
                     x = root;
                 }
+            //对称
             } else { // symmetric
                 Entry<K,V> sib = leftOf(parentOf(x));
 
