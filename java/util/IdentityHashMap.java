@@ -133,6 +133,25 @@ import java.util.function.Consumer;
  * @see     TreeMap
  * @author  Doug Lea and Josh Bloch
  * @since   1.4
+ *
+ * 这个类仅用于需要引用相等的罕见情况。该类一个典型的用途是拓扑保存对象图的转换，比如序列化或者深度拷贝。
+ * 这个类的另一个典型用途是维护代理对象。例如，调试工具可能希望为正在调试的程序中的每个对象维护一个代理对象。
+ *
+ * 这个Map采用的是引用相等的情况，即内存地址相同。我们来看一下它用法：
+ * public static void main(String[] args){
+ *     IdentityHashMap<String, Integer> map = new IdentityHashMap<>();
+ *     map.put("Hello " + "World", 1);
+ *     map.put("Hello World", 2);
+ *     map.put(new String("Hello World"), 3);
+ *     map.put(null, 4);
+ *     map.put(null, 5);
+ *     System.out.println(map);
+ * }
+ *
+ * 上面的输出是：
+ *   {null=5, Hello World=2, Hello World=3}
+ * 因为采用的是引用相等来比较，所以1和2是相等的（常量池），对于key相同，用新的value替换，而3是用new在堆中申请的，
+ * 所以与前面的不同。至于后面的null，是为了说明IdentityHashMap可以存放null
  */
 
 public class IdentityHashMap<K,V>
@@ -144,6 +163,8 @@ public class IdentityHashMap<K,V>
      * MUST be a power of two.  The value 32 corresponds to the
      * (specified) expected maximum size of 21, given a load factor
      * of 2/3.
+     *
+     * 初始化容量，存放最大的数量为21，填充因子是2/3
      */
     private static final int DEFAULT_CAPACITY = 32;
 
@@ -152,6 +173,8 @@ public class IdentityHashMap<K,V>
      * by either of the constructors with arguments.  The value 4 corresponds
      * to an expected maximum size of 2, given a load factor of 2/3.
      * MUST be a power of two.
+     *
+     * 最小容量，实际最大存放容量为2，记住2/3
      */
     private static final int MINIMUM_CAPACITY = 4;
 
@@ -163,11 +186,18 @@ public class IdentityHashMap<K,V>
      * In fact, the map can hold no more than MAXIMUM_CAPACITY-1 items
      * because it has to have at least one slot with the key == null
      * in order to avoid infinite loops in get(), put(), remove()
+     *
+     * 最大容量2^29，然而实际上存放最大的量为MAXIMUM_CAPACITY-1
      */
     private static final int MAXIMUM_CAPACITY = 1 << 29;
 
     /**
      * The table, resized as necessary. Length MUST always be a power of two.
+     *
+     * IdentityHashMap的结构与HashMap等不同，其实就是一个Object[]数组，数组的前一位存放Key，
+     * 后面一个位置就存放它对应的Value
+     *
+     * 存放key-value的表
      */
     transient Object[] table; // non-private to simplify nested class access
 
@@ -175,16 +205,22 @@ public class IdentityHashMap<K,V>
      * The number of key-value mappings contained in this identity hash map.
      *
      * @serial
+     *
+     * map里存放的key-value数量
      */
     int size;
 
     /**
      * The number of modifications, to support fast-fail iterators
+     *
+     * 用于统计map修改次数的计数器，用于fail-fast抛出ConcurrentModificationException
      */
     transient int modCount;
 
     /**
      * Value representing null keys inside tables.
+     *
+     * 对于存放null的情况
      */
     static final Object NULL_KEY = new Object();
 
@@ -235,6 +271,7 @@ public class IdentityHashMap<K,V>
      */
     private static int capacity(int expectedMaxSize) {
         // assert expectedMaxSize >= 0;
+        // 最大数量小于0
         return
             (expectedMaxSize > MAXIMUM_CAPACITY / 3) ? MAXIMUM_CAPACITY :
             (expectedMaxSize <= 2 * MINIMUM_CAPACITY / 3) ? MINIMUM_CAPACITY :
@@ -245,6 +282,8 @@ public class IdentityHashMap<K,V>
      * Initializes object to be an empty map with the specified initial
      * capacity, which is assumed to be a power of two between
      * MINIMUM_CAPACITY and MAXIMUM_CAPACITY inclusive.
+     *
+     * 申请initCapacity两倍的空间
      */
     private void init(int initCapacity) {
         // assert (initCapacity & -initCapacity) == initCapacity; // power of 2
@@ -921,6 +960,8 @@ public class IdentityHashMap<K,V>
      * This field is initialized to contain an instance of the entry set
      * view the first time this view is requested.  The view is stateless,
      * so there's no reason to create more than one.
+     *
+     * key、value的视图
      */
     private transient Set<Map.Entry<K,V>> entrySet;
 
