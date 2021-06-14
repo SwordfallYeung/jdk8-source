@@ -140,8 +140,16 @@ package java.util;
  * @since 1.5
  * @author Doug Lea
  * @param <E> the type of elements held in this collection
+ *
+ * Queue继承Collection，它是一个接口，Queue接口定义的是一个队列，它包含队列的基本操作：
+ * 入队（enqueue）和出队（dequeue）
+ *
+ * Queue定义了6个方法，根据操作可以分为三类：入队、出队和遍历
  */
 public interface Queue<E> extends Collection<E> {
+
+    //1. 入队：add()和offer()
+
     /**
      * Inserts the specified element into this queue if it is possible to do so
      * immediately without violating capacity restrictions, returning
@@ -158,6 +166,9 @@ public interface Queue<E> extends Collection<E> {
      *         this queue does not permit null elements
      * @throws IllegalArgumentException if some property of this element
      *         prevents it from being added to this queue
+     *
+     * 上述两者区别：
+     *     当队列空间已满无法入队时，add()方法会抛出异常
      */
     boolean add(E e);
 
@@ -177,9 +188,12 @@ public interface Queue<E> extends Collection<E> {
      *         this queue does not permit null elements
      * @throws IllegalArgumentException if some property of this element
      *         prevents it from being added to this queue
+     *
+     * 二者区别：当队列空间已满无法入队时，offer()会返回false
      */
     boolean offer(E e);
 
+    //2.出队：remove()和poll()
     /**
      * Retrieves and removes the head of this queue.  This method differs
      * from {@link #poll poll} only in that it throws an exception if this
@@ -187,6 +201,10 @@ public interface Queue<E> extends Collection<E> {
      *
      * @return the head of this queue
      * @throws NoSuchElementException if this queue is empty
+     *
+     * 二者相同点是：移除并返回队列的首节点
+     *
+     * 二者区别在于：当队列为空时，remove()方法会抛出异常
      */
     E remove();
 
@@ -195,9 +213,14 @@ public interface Queue<E> extends Collection<E> {
      * or returns {@code null} if this queue is empty.
      *
      * @return the head of this queue, or {@code null} if this queue is empty
+     *
+     * 二者相同点是：移出并返回队列的首节点
+     *
+     * 二者区别在于：当队列为空时，poll会返回null
      */
     E poll();
 
+    //3. 遍历：element()和peek()
     /**
      * Retrieves, but does not remove, the head of this queue.  This method
      * differs from {@link #peek peek} only in that it throws an exception
@@ -205,6 +228,11 @@ public interface Queue<E> extends Collection<E> {
      *
      * @return the head of this queue
      * @throws NoSuchElementException if this queue is empty
+     *
+     * 二者相同点：返回队列的首节点，都表示检索但不移除队列头部元素，
+     * 可用于从头开始遍历队列
+     *
+     * 二者区别在于：当队列为空时，element()方法会抛出异常
      */
     E element();
 
@@ -213,6 +241,11 @@ public interface Queue<E> extends Collection<E> {
      * or returns {@code null} if this queue is empty.
      *
      * @return the head of this queue, or {@code null} if this queue is empty
+     *
+     * 二者相同点：返回队列的首节点，都表示检索但不移除队列头部元素，
+     * 可用于从头开始遍历队列
+     *
+     * 二者区别在于：当队列为空时，peek()会返回null
      */
     E peek();
 }
