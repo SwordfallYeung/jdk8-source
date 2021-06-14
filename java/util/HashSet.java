@@ -84,6 +84,11 @@ import java.io.InvalidObjectException;
  * @see     TreeSet
  * @see     HashMap
  * @since   1.2
+ *
+ * 实现了Set的接口，继承了AbstractSet抽象类，抽象类里面定义了集合的常见操作
+ *
+ * 总结：
+ *      Set的各种底层实现都是对应的Map，熟悉了Map里的各种方法，对于Set的了解也会更加深入。
  */
 
 public class HashSet<E>
@@ -92,14 +97,20 @@ public class HashSet<E>
 {
     static final long serialVersionUID = -5024744406713321676L;
 
+    // HashMap就是HashSet里实现具体操作对象
     private transient HashMap<E,Object> map;
 
     // Dummy value to associate with an Object in the backing Map
+    // 将对象作为Value存进去
     private static final Object PRESENT = new Object();
+    //由于使用Map进行操作，把E作为Key，要定义一个PRESENT对象作为Value，
+    //每个存入的对象都使用它来作为Value
 
     /**
      * Constructs a new, empty set; the backing <tt>HashMap</tt> instance has
      * default initial capacity (16) and load factor (0.75).
+     *
+     * 我们平时构建HashSet的时候，其实它是在里面new了一个HashMap
      */
     public HashSet() {
         map = new HashMap<>();
@@ -113,6 +124,8 @@ public class HashSet<E>
      *
      * @param c the collection whose elements are to be placed into this set
      * @throws NullPointerException if the specified collection is null
+     *
+     * 调用传集合的构造方法则是使用了HashMap里指定初始化容量的构造方法，然后再调用addAll()
      */
     public HashSet(Collection<? extends E> c) {
         map = new HashMap<>(Math.max((int) (c.size()/.75f) + 1, 16));
@@ -156,6 +169,9 @@ public class HashSet<E>
      *             constructor from other int, float constructor.)
      * @throws     IllegalArgumentException if the initial capacity is less
      *             than zero, or if the load factor is nonpositive
+     *
+     * 注意它是包访问权限的，而不是public，因为这个构造方法是提供给LinkedHashSet使用的，
+     * 所以里面初始化的也是LinkedHashMap。
      */
     HashSet(int initialCapacity, float loadFactor, boolean dummy) {
         map = new LinkedHashMap<>(initialCapacity, loadFactor);
@@ -214,6 +230,8 @@ public class HashSet<E>
      * @param e element to be added to this set
      * @return <tt>true</tt> if this set did not already contain the specified
      * element
+     *
+     * add方法则是调用了map的put()方法，将对象作为Key，之前域里的PRESENT作为Value，插入到HashMap中。
      */
     public boolean add(E e) {
         return map.put(e, PRESENT)==null;

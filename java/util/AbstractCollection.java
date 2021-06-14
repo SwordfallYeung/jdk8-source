@@ -337,6 +337,8 @@ public abstract class AbstractCollection<E> implements Collection<E> {
      * @throws IllegalStateException         {@inheritDoc}
      *
      * @see #add(Object)
+     *
+     * addAll方法也很简单，其实就是遍历集合C，然后调用add方法，实现插入HashMap。
      */
     public boolean addAll(Collection<? extends E> c) {
         boolean modified = false;
