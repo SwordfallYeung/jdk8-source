@@ -80,7 +80,8 @@ import java.util.function.Consumer;
  * @param <E> the type of elements held in this collection
  *
  *  我们来看下常见的List中的第二个——LinkedList，在前面分析ArrayList的时候，我们提到，
- *  LinkedList是链表的结构，其实它跟我们在分析map的时候讲到LinkedHashMap的结构有一定的相似。
+ *  LinkedList是双向链表的结构，同时实现了List接口和Deque接口，因此也具备List、双端队列
+ *  和栈的性质；其实它跟我们在分析map的时候讲到LinkedHashMap的结构有一定的相似。
  *
  *  与ArrayList不同的是，LinkedList继承了AbstractSequentialList，从Sequential这个单词可以看出，
  *  该抽象类实现的是顺序访问的结构，因为可以推测可能和链表有关。
