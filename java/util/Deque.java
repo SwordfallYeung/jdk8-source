@@ -189,8 +189,37 @@ package java.util;
  * @author Josh Bloch
  * @since  1.6
  * @param <E> the type of elements held in this collection
+ *
+ * Deque接口继承自Queue接口，可以将Deque理解为【双端队列】和【栈（Stack）】的组合，该栈可以说是一个【链式栈】
+ *
+ * 一般的队列是从尾部插入元素、头部移除元素；而双端队列则可以分别从两端插入元素、两端移除元素
+ *
+ * Deque实现类是LinkedList
+ *
+ * 总结：
+ *      1.Queue和Deque都可用于表示队列；
+ *      2.Queue表示基本的队列，包含队列的【入队】和【出队】操作；
+ *      3.Deque继承自Queue，除了基本的队列操作，Deque是一个【双端队列】，可以认为它有两个头、两个尾；而且，Deque还可以作为一个栈
  */
 public interface Deque<E> extends Queue<E> {
+
+
+    /**
+     * Deque作为双端队列，其定义的方法可以归纳如下：
+     * 1.Insert:
+     *          First Element(Head):  当队列空间满时，addFirst(e)会抛出异常，offerFirst(e)会返回null
+     *          Last Element(Tail):   当队列空间满时，addLast(e)会抛出异常，offerLast(e)会返回null
+     *
+     * 2.Remove:
+     *           First Element(Head):  当队列空间为null时，removeFirst()会抛出异常，pollFirst()会返回null
+     *           Last Element(Tail):   当队列空间为null时，removeLast()会抛出异常，pollLast会返回null
+     *
+     *
+     * 3.Examine(查看):
+     *           First Element(Head)： 当队列空间为null时，getFirst()会抛出异常，peekFirst()会返回null
+     *           Last Element(Tail):   当队列空间为null时，getLast()会抛出异常，peekLast()会返回null
+     */
+
     /**
      * Inserts the specified element at the front of this deque if it is
      * possible to do so immediately without violating capacity restrictions,
@@ -228,6 +257,9 @@ public interface Deque<E> extends Queue<E> {
      *         deque does not permit null elements
      * @throws IllegalArgumentException if some property of the specified
      *         element prevents it from being added to this deque
+     *
+     * 类似于Queue类的add(e)方法，区别在于Queue类的add方法返回boolean值，而addLast不返回值；
+     * 两者在LinkedList实现类中代码都是调用linkLast(e)，add()调用完毕返回true，addLast()不返回。
      */
     void addLast(E e);
 
@@ -264,6 +296,10 @@ public interface Deque<E> extends Queue<E> {
      *         deque does not permit null elements
      * @throws IllegalArgumentException if some property of the specified
      *         element prevents it from being added to this deque
+     *
+     * 等同于Queue类的offer(e)方法
+     * 两者在LinkedList实现类中代码都是调用linkLast(e)；区别：Queue类的offer方法则是调用add方法，
+     * add方法里面调用linkLast方法，而offerLast直接调用linkLast方法
      */
     boolean offerLast(E e);
 
@@ -274,6 +310,9 @@ public interface Deque<E> extends Queue<E> {
      *
      * @return the head of this deque
      * @throws NoSuchElementException if this deque is empty
+     *
+     * 等同于Queue类的remove(e)方法
+     * 两者在LinkedList实现类中代码都是调用unlinkFirst(e)，区别：remove方法是直接调用removeFirst方法实现的。
      */
     E removeFirst();
 
@@ -292,6 +331,9 @@ public interface Deque<E> extends Queue<E> {
      * or returns {@code null} if this deque is empty.
      *
      * @return the head of this deque, or {@code null} if this deque is empty
+     *
+     * 等同于Queue类的poll(e)方法
+     * 两者在LinkedList实现类中代码都是若first为null，则返回null，否则调用unlinkFirst(e)。
      */
     E pollFirst();
 
@@ -311,6 +353,9 @@ public interface Deque<E> extends Queue<E> {
      *
      * @return the head of this deque
      * @throws NoSuchElementException if this deque is empty
+     *
+     * 等同于Queue类的element()方法
+     * 两者在LinkedList实现类中，element()直接调用getFirst方法，如果队列为空，则抛出异常。
      */
     E getFirst();
 
@@ -329,6 +374,9 @@ public interface Deque<E> extends Queue<E> {
      * or returns {@code null} if this deque is empty.
      *
      * @return the head of this deque, or {@code null} if this deque is empty
+     *
+     * 等同于Queue类的peek()方法
+     * 两者在LinkedList实现类中，peek和peekFirst两者方法代码一样。
      */
     E peekFirst();
 
@@ -357,6 +405,10 @@ public interface Deque<E> extends Queue<E> {
      * @throws NullPointerException if the specified element is null and this
      *         deque does not permit null elements
      * (<a href="Collection.html#optional-restrictions">optional</a>)
+     *
+     * 从该双端队列中移除第一次出现的指定元素
+     *
+     * 在实现类LinkedList中实际中调用了remove(Object o)方法
      */
     boolean removeFirstOccurrence(Object o);
 
@@ -377,10 +429,13 @@ public interface Deque<E> extends Queue<E> {
      * @throws NullPointerException if the specified element is null and this
      *         deque does not permit null elements
      * (<a href="Collection.html#optional-restrictions">optional</a>)
+     *
+     * 从该双端队列中移除最后一次出现的指定元素，实现代码与removeFirstOccurrence类似，只不过把first替换成last
      */
     boolean removeLastOccurrence(Object o);
 
     // *** Queue methods ***
+    // *** Queue 方法，start ***
 
     /**
      * Inserts the specified element into the queue represented by this deque
@@ -403,6 +458,8 @@ public interface Deque<E> extends Queue<E> {
      *         deque does not permit null elements
      * @throws IllegalArgumentException if some property of the specified
      *         element prevents it from being added to this deque
+     *
+     * 等同于addLast(e)
      */
     boolean add(E e);
 
@@ -426,6 +483,8 @@ public interface Deque<E> extends Queue<E> {
      *         deque does not permit null elements
      * @throws IllegalArgumentException if some property of the specified
      *         element prevents it from being added to this deque
+     *
+     * 等同于offerLast(e)
      */
     boolean offer(E e);
 
@@ -439,6 +498,8 @@ public interface Deque<E> extends Queue<E> {
      *
      * @return the head of the queue represented by this deque
      * @throws NoSuchElementException if this deque is empty
+     *
+     * 等同于removeFirst()
      */
     E remove();
 
@@ -451,6 +512,8 @@ public interface Deque<E> extends Queue<E> {
      *
      * @return the first element of this deque, or {@code null} if
      *         this deque is empty
+     *
+     * 等同于pollFirst()
      */
     E poll();
 
@@ -464,6 +527,8 @@ public interface Deque<E> extends Queue<E> {
      *
      * @return the head of the queue represented by this deque
      * @throws NoSuchElementException if this deque is empty
+     *
+     * 等同于getFirst()
      */
     E element();
 
@@ -476,11 +541,15 @@ public interface Deque<E> extends Queue<E> {
      *
      * @return the head of the queue represented by this deque, or
      *         {@code null} if this deque is empty
+     *
+     * 等同于peekFirst()
      */
     E peek();
 
+    // *** Queue 方法，end ***
 
     // *** Stack methods ***
+    // *** Stack 方法 start ***
 
     /**
      * Pushes an element onto the stack represented by this deque (in other
@@ -499,6 +568,8 @@ public interface Deque<E> extends Queue<E> {
      *         deque does not permit null elements
      * @throws IllegalArgumentException if some property of the specified
      *         element prevents it from being added to this deque
+     *
+     * 入栈，等同于addFirst(e)
      */
     void push(E e);
 
@@ -511,8 +582,12 @@ public interface Deque<E> extends Queue<E> {
      * @return the element at the front of this deque (which is the top
      *         of the stack represented by this deque)
      * @throws NoSuchElementException if this deque is empty
+     *
+     * 出栈，等同于removeFirst()
      */
     E pop();
+
+    // *** Stack 方法 end ***
 
 
     // *** Collection methods ***
@@ -578,6 +653,8 @@ public interface Deque<E> extends Queue<E> {
      *
      * @return an iterator over the elements in this deque in reverse
      * sequence
+     *
+     * 以相反顺序返回此双端队列中元素的迭代器，可以认为是iterator()反过来
      */
     Iterator<E> descendingIterator();
 
