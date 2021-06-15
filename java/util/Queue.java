@@ -169,6 +169,9 @@ public interface Queue<E> extends Collection<E> {
      *
      * 上述两者区别：
      *     当队列空间已满无法入队时，add()方法会抛出异常
+     *
+     * 类似于Deque类的addLast方法，区别在于Queue类的add方法返回boolean值，而addLast不返回值；
+     * 两者在LinkedList实现类中代码都是调用linkLast(e)，add()调用完毕返回true，addLast()不返回。
      */
     boolean add(E e);
 
@@ -190,6 +193,10 @@ public interface Queue<E> extends Collection<E> {
      *         prevents it from being added to this queue
      *
      * 二者区别：当队列空间已满无法入队时，offer()会返回false
+     *
+     * 等同于Deque类的offerLast(e)方法
+     * 两者在LinkedList实现类中代码都是调用linkLast(e)；区别：Queue类的offer方法则是调用add方法，
+     * add方法里面调用linkLast方法，而offerLast直接调用linkLast方法
      */
     boolean offer(E e);
 
@@ -205,6 +212,9 @@ public interface Queue<E> extends Collection<E> {
      * 二者相同点是：移除并返回队列的首节点
      *
      * 二者区别在于：当队列为空时，remove()方法会抛出异常
+     *
+     * 等同于Deque类的removeFirst(e)方法
+     * 两者在LinkedList实现类中代码都是调用unlinkFirst(e)，区别：remove方法是直接调用removeFirst方法实现的。
      */
     E remove();
 
@@ -217,6 +227,9 @@ public interface Queue<E> extends Collection<E> {
      * 二者相同点是：移出并返回队列的首节点
      *
      * 二者区别在于：当队列为空时，poll会返回null
+     *
+     * 等同于Deque类的pollFirst(e)方法
+     * 两者在LinkedList实现类中代码都是若first为null，则返回null，否则调用unlinkFirst(e)。
      */
     E poll();
 
@@ -233,6 +246,9 @@ public interface Queue<E> extends Collection<E> {
      * 可用于从头开始遍历队列
      *
      * 二者区别在于：当队列为空时，element()方法会抛出异常
+     *
+     * 等同于Deque类的getFirst()方法
+     * 两者在LinkedList实现类中，element()直接调用getFirst方法，如果队列为空，则抛出异常。
      */
     E element();
 
@@ -246,6 +262,9 @@ public interface Queue<E> extends Collection<E> {
      * 可用于从头开始遍历队列
      *
      * 二者区别在于：当队列为空时，peek()会返回null
+     *
+     * 等同于Deque类的peekFirst()方法
+     * 两者在LinkedList实现类中，peek和peekFirst两者方法代码一样。
      */
     E peek();
 }
