@@ -79,6 +79,13 @@ import java.util.function.UnaryOperator;
  * @see Collection
  * @see LinkedList
  * @since   JDK1.0
+ *
+ * Vector的继承关系与ArrayList是一样的，继承AbstractList，实现List接口，
+ * 另外还实现RandomAccess，用来表明其支持快速（通常是固定时间）随机访问。
+ *
+ * Vector的内部实现与ArrayList类似，也可以理解为一个【可变数组】。
+ *
+ * PS：Vector目前使用较少，且官方
  */
 public class Vector<E>
     extends AbstractList<E>
