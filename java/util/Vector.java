@@ -85,8 +85,10 @@ import java.util.function.UnaryOperator;
  *
  * Vector的内部实现与ArrayList类似，也可以理解为一个【可变数组】。
  *
- * PS：Vector目前使用较少，且官方
- */
+ * Vector目前使用较少，且官方也推荐在无线程安全的需求时使用ArrayList代替Vector，
+ * 这里仅研究其实现原理。
+ *
+ * */
 public class Vector<E>
     extends AbstractList<E>
     implements List<E>, RandomAccess, Cloneable, java.io.Serializable
@@ -99,6 +101,8 @@ public class Vector<E>
      * <p>Any array elements following the last element in the Vector are null.
      *
      * @serial
+     *
+     * 实际存储对象的数组
      */
     protected Object[] elementData;
 
@@ -118,6 +122,8 @@ public class Vector<E>
      * of the vector is doubled each time it needs to grow.
      *
      * @serial
+     *
+     * 容量增长记录
      */
     protected int capacityIncrement;
 
@@ -133,13 +139,18 @@ public class Vector<E>
      *                              increased when the vector overflows
      * @throws IllegalArgumentException if the specified initial capacity
      *         is negative
+     *
+     * 指定初始容量和容量增长因子的构造器
      */
     public Vector(int initialCapacity, int capacityIncrement) {
         super();
+        //判断初始化容量小于0的情况
         if (initialCapacity < 0)
             throw new IllegalArgumentException("Illegal Capacity: "+
                                                initialCapacity);
+        //初始化存储容量和容量增长因子
         this.elementData = new Object[initialCapacity];
+        //不同的是：Vector比ArrayList的构造器多了一个参数capacityIncrement
         this.capacityIncrement = capacityIncrement;
     }
 
@@ -150,6 +161,8 @@ public class Vector<E>
      * @param   initialCapacity   the initial capacity of the vector
      * @throws IllegalArgumentException if the specified initial capacity
      *         is negative
+     *
+     * 指定容量的构造器
      */
     public Vector(int initialCapacity) {
         this(initialCapacity, 0);
@@ -159,8 +172,11 @@ public class Vector<E>
      * Constructs an empty vector so that its internal data array
      * has size {@code 10} and its standard capacity increment is
      * zero.
+     *
+     * 无参构造器
      */
     public Vector() {
+        // 与ArrayList类似，Vector内部也维护了一个Object类型的数组（elementData）来存储元素（默认初始化容量也是10）
         this(10);
     }
 
@@ -173,6 +189,8 @@ public class Vector<E>
      *       vector
      * @throws NullPointerException if the specified collection is null
      * @since   1.2
+     *
+     * 入参为集合的构造器
      */
     public Vector(Collection<? extends E> c) {
         elementData = c.toArray();
