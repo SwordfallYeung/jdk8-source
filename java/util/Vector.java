@@ -88,6 +88,12 @@ import java.util.function.UnaryOperator;
  * Vector目前使用较少，且官方也推荐在无线程安全的需求时使用ArrayList代替Vector，
  * 这里仅研究其实现原理。
  *
+ * 总结：
+ * 1. Vector是线程安全的，它实现线程安全的方式也很简单粗暴：直接在方法上使用synchronized关键字进行同步。
+ * 2. 与ArrayList类似，Vector也可以认为是【可变数组】；
+ * 3. 扩容原理与 ArrayList 基本一致，只是新容量计算方式略有不同：指定增长容量时，新容量为旧容量 + 增长容量；否则扩容为旧容量的 2 倍；
+ * 4. 线程安全的，实现方式简单（synchronized）；
+ * 5. 当前使用较少，这里仅学习其实现原理。
  * */
 public class Vector<E>
     extends AbstractList<E>
@@ -264,9 +270,13 @@ public class Vector<E>
      * extra synchronization.
      *
      * @see #ensureCapacity(int)
+     *
+     * 该方法是非同步的
+     * 因为Vector内部调用该方法的地方都使用了 synchronized 关键字进行同步，这里不再额外使用
      */
     private void ensureCapacityHelper(int minCapacity) {
         // overflow-conscious code
+        // 大于数组容量时再进行扩容操作
         if (minCapacity - elementData.length > 0)
             grow(minCapacity);
     }
@@ -282,6 +292,10 @@ public class Vector<E>
     private void grow(int minCapacity) {
         // overflow-conscious code
         int oldCapacity = elementData.length;
+        // Vector与ArrayList的扩容方式基本一致，只是新容量的计算方式有所不同
+        //Vector计算扩容后的新容量时，根据capacityIncrement的值可以分为两种情况：
+        //1.capacityIncrement > 0 : 新容量 = 旧容量 + capacityIncrement；
+        //2.capacityIncrement <= 0 : 新容量 = 旧容量 * 2.
         int newCapacity = oldCapacity + ((capacityIncrement > 0) ?
                                          capacityIncrement : oldCapacity);
         if (newCapacity - minCapacity < 0)
@@ -801,6 +815,9 @@ public class Vector<E>
      * @param e element to be appended to this Vector
      * @return {@code true} (as specified by {@link Collection#add})
      * @since 1.2
+     *
+     * 注意这里的关键字synchronized,
+     * Vector内部许多方法都使用了该关键字，这也是Vector实现线程安全的方式，简单粗暴。
      */
     public synchronized boolean add(E e) {
         modCount++;
