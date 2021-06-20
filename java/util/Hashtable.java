@@ -126,6 +126,17 @@ import java.util.function.BiFunction;
  * @see     HashMap
  * @see     TreeMap
  * @since JDK1.0
+ *
+ * HashMap继承了AbstractMap，而Hashtable继承的是Dictionary
+ *
+ * Hashtable的key和value都不能为空，而HashMap的key和value都允许为空，并且key必须
+ * 要实现hashcode方法和equals方法
+ *
+ * Hashtable目前使用不是很多，若无线程安全的需求，推荐使用HashMap；若需要线程安全的
+ * 高并发实现，推荐使用ConcurrentHashMap。
+ *
+ * 与HashMap类似，Hashtable也是散列表的实现。它的内部结构是【数组 + 链表】的形式，比
+ * HashMap的结构少了红黑树
  */
 public class Hashtable<K,V>
     extends Dictionary<K,V>
@@ -133,6 +144,8 @@ public class Hashtable<K,V>
 
     /**
      * The hash table data.
+     *
+     * 内部存储元素的数组
      */
     private transient Entry<?,?>[] table;
 
@@ -146,6 +159,8 @@ public class Hashtable<K,V>
      * value of this field is (int)(capacity * loadFactor).)
      *
      * @serial
+     *
+     * 阀值 (int)(capacity * loadFactor)
      */
     private int threshold;
 
@@ -153,6 +168,8 @@ public class Hashtable<K,V>
      * The load factor for the hashtable.
      *
      * @serial
+     *
+     * 负载因子 ，默认0.75
      */
     private float loadFactor;
 
@@ -176,6 +193,8 @@ public class Hashtable<K,V>
      * @param      loadFactor        the load factor of the hashtable.
      * @exception  IllegalArgumentException  if the initial capacity is less
      *             than zero, or if the load factor is nonpositive.
+     *
+     * 构造一个空的Hashtable，指定初始容量和负载因子
      */
     public Hashtable(int initialCapacity, float loadFactor) {
         if (initialCapacity < 0)
@@ -198,6 +217,8 @@ public class Hashtable<K,V>
      * @param     initialCapacity   the initial capacity of the hashtable.
      * @exception IllegalArgumentException if the initial capacity is less
      *              than zero.
+     *
+     * 构造一个空的Hashtable，指定初始容量，负载因子为0.75
      */
     public Hashtable(int initialCapacity) {
         this(initialCapacity, 0.75f);
@@ -206,6 +227,10 @@ public class Hashtable<K,V>
     /**
      * Constructs a new, empty hashtable with a default initial capacity (11)
      * and load factor (0.75).
+     *
+     * 构造一个空的Hashtable，初始容量为11，负载因子为0.75
+     *
+     * 对比HashMap，其初始容量为16，负载因子为0.75
      */
     public Hashtable() {
         this(11, 0.75f);
@@ -219,6 +244,8 @@ public class Hashtable<K,V>
      * @param t the map whose mappings are to be placed in this map.
      * @throws NullPointerException if the specified map is null.
      * @since   1.2
+     *
+     * 使用给定的Map，构造一个Hashtable
      */
     public Hashtable(Map<? extends K, ? extends V> t) {
         this(Math.max(2*t.size(), 11), 0.75f);
@@ -375,6 +402,8 @@ public class Hashtable<K,V>
      * Some VMs reserve some header words in an array.
      * Attempts to allocate larger arrays may result in
      * OutOfMemoryError: Requested array size exceeds VM limit
+     *
+     * 数组能够分配的最大容量Integer.MAX_VALUE-8，而HashMap的最大容量为2的30次方
      */
     private static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
 
@@ -420,8 +449,10 @@ public class Hashtable<K,V>
         modCount++;
 
         Entry<?,?> tab[] = table;
+        // 超过阀值，则扩容
         if (count >= threshold) {
             // Rehash the table if the threshold is exceeded
+            // 扩容方法
             rehash();
 
             tab = table;
@@ -430,6 +461,9 @@ public class Hashtable<K,V>
         }
 
         // Creates the new entry.
+        // 将 key-value 添加到table中（头插法，即插到链表的头部）
+        // 即：先拿到 index 位置的元素，若为空，表示插入 entry 后则只有一个元素；
+        //     若不为空，表示该位置已有元素，将已有元素 e 连接到新的 entry 后面
         @SuppressWarnings("unchecked")
         Entry<K,V> e = (Entry<K,V>) tab[index];
         tab[index] = new Entry<>(hash, key, value, e);
@@ -455,15 +489,19 @@ public class Hashtable<K,V>
      */
     public synchronized V put(K key, V value) {
         // Make sure the value is not null
+        // 先判断value不能为空，hashMap的value值可以为空
         if (value == null) {
             throw new NullPointerException();
         }
 
         // Makes sure the key is not already in the hashtable.
+        // 确定key没有存在hashtable中
         Entry<?,?> tab[] = table;
+        // 计算key在table中的索引
         int hash = key.hashCode();
         int index = (hash & 0x7FFFFFFF) % tab.length;
         @SuppressWarnings("unchecked")
+        // 在桶中查找key，判断key在table中是否已存在，若存在，则用value替换旧值
         Entry<K,V> entry = (Entry<K,V>)tab[index];
         for(; entry != null ; entry = entry.next) {
             if ((entry.hash == hash) && entry.key.equals(key)) {
@@ -473,6 +511,7 @@ public class Hashtable<K,V>
             }
         }
 
+        // 若不存在，则执行 addEntry 方法，将 key-value 添加到table中
         addEntry(hash, key, value, index);
         return null;
     }
@@ -1242,11 +1281,15 @@ public class Hashtable<K,V>
 
     /**
      * Hashtable bucket collision list entry
+     *
+     * Hashtable 的Entry类与 HashMap的Node类结构 是类似的
      */
     private static class Entry<K,V> implements Map.Entry<K,V> {
+        //key & value 的hash值
         final int hash;
         final K key;
         V value;
+        //指向下一个节点
         Entry<K,V> next;
 
         protected Entry(int hash, K key, V value, Entry<K,V> next) {
@@ -1273,6 +1316,7 @@ public class Hashtable<K,V>
         }
 
         public V setValue(V value) {
+            // 这里是HashMap的Node类不一样，这里先判断是否为null
             if (value == null)
                 throw new NullPointerException();
 
@@ -1285,12 +1329,13 @@ public class Hashtable<K,V>
             if (!(o instanceof Map.Entry))
                 return false;
             Map.Entry<?,?> e = (Map.Entry<?,?>)o;
-
+            // 这里相比HashMap的Node类，会先对key和value进行null判断，而后在判断key和value是否相等
             return (key==null ? e.getKey()==null : key.equals(e.getKey())) &&
                (value==null ? e.getValue()==null : value.equals(e.getValue()));
         }
 
         public int hashCode() {
+            // 相比HashMap的Node类，这里没有key的hash值，只有value的hash值，但运算方法一样
             return hash ^ Objects.hashCode(value);
         }
 
