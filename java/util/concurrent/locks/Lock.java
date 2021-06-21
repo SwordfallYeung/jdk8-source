@@ -374,4 +374,160 @@ public interface Lock {
      * 创建一个与该锁绑定 Condition
      */
     Condition newCondition();
+
+    /**
+     * 以典型的“生产者-消费者”模型为例，下面分别使用synchronized和Lock方式来实现并比较其用法。
+     *
+     * 使用synchronized和wait/notify实现，示例代码：
+     *
+     * public class ProdConsumerTest{
+     *     private static final Object monitor = new Object();
+     *     private Random random = new Random();
+     *     private static final int SIZE = 10;
+     *     private Queue<Integer> queue = new LinkedList<>();
+     *
+     *     private void produce() throws InterruptedException{
+     *         for(;;){
+     *             synchronized(monitor){
+     *                 if(queue.size() >= SIZE){
+     *                     monitor.wait();
+     *                 }
+     *                 int nextInt = random.nextInt(1000);
+     *                 queue.offer(nextInt);
+     *
+     *                 sleep(400);
+     *                 System.out.println("size=" + queue.size() + ", 生成-->" + nextInt);
+     *                 monitor.notify();
+     *             }
+     *         }
+     *     }
+     *
+     *     private void consume() throws InterruptedException{
+     *         for(;;){
+     *             synchronized(monitor){
+     *                 if(queue.size() <= 0){
+     *                     monitor.wait();
+     *                 }
+     *                 Integer poll = queue.poll();
+     *
+     *                 sleep(300);
+     *                 System.out.println("size=" + queue.size() + ", 消费成功-->" + poll);
+     *                 monitor.notify();
+     *             }
+     *         }
+     *     }
+     *
+     *     private void sleep(int timeout){
+     *          try {
+     *             TimeUnit.MILLISECONDS.sleep(timeout);
+     *          } catch (InterruptedException e) {
+     *             e.printStackTrace();
+     *          }
+     *     }
+     *
+     *     public static void main(String[] args){
+     *         ProdConsumerTest test = new ProdConsumerTest();
+     *         Thread t1 = new Thread(() -> {
+     *             try {
+     *                test.produce();
+     *             } catch (InterruptedException e) {
+     *                e.printStackTrace();
+     *             }
+     *         });
+     *
+     *         Thread t1 = new Thread(() -> {
+     *              try {
+     *                  test.consume();
+     *              } catch (InterruptedException e) {
+     *                  e.printStackTrace();
+     *              }
+     *          });
+     *
+     *          t1.start();
+     *          t2.start();
+     *     }
+     * }
+     *
+     *
+     * 使用Lock/Condition实现，示例代码：
+     *
+     * public class ProdConsumerTest{
+     *     private static final int SIZE = 10;
+     *     private Random random = new Random();
+     *     private Queue<Integer> queue = new LinkedList<>();
+     *
+     *     // ReentrantLock 是JDK提供的Lock 接口实现类
+     *     private Lock lock = new ReentrantLock();
+     *     private Condition notFull = lock.newCondition();
+     *     private Condition notEmpty = lock.newCondition();
+     *
+     *     private void produce() throws InterruptedException{
+     *         for(;;){
+     *             lock.lock();
+     *             try{
+     *                 if(queue.size() >= SIZE){
+     *                     notFull.await();
+     *                 }
+     *                 int nextInt = random.nextInt(1000);
+     *                 queue.offer(nextInt);
+     *
+     *                 sleep(400);
+     *                 System.out.println("size=" + queue.size() + ", 生产-->" + nextInt);
+     *                 notEmpty.signal();
+     *             }finally{
+     *                 lock.unlock();
+     *             }
+     *         }
+     *     }
+     *
+     *     private void consume() throws InterruptedException{
+     *         for(;;){
+     *             lock.lock();
+     *             try{
+     *                if(queue.size() <= 0){
+     *                    notEmpty.await();
+     *                }
+     *
+     *                Integer poll = queue.poll();
+     *
+     *                sleep(300);
+     *                System.out.println("size=" + queue.size() + ", 消费成功-->" + poll);
+     *                notFull.signal();
+     *             }finally{
+     *                 lock.unlock();
+     *             }
+     *         }
+     *     }
+     *
+     *     private void sleep(int timeout){
+     *         try{
+     *             TimeUnit.MILLISECONDS.sleep(timeout);
+     *         } catch (InterruptedException e) {
+     *             e.printStackTrace();
+     *         }
+     *     }
+     *
+     *     public static void main(String[] args){
+     *         ProdConsumerTest test = new ProdConsumerTest();
+     *         Thread t1 = new Thread(() -> {
+     *             try{
+     *                 test.produce();
+     *             }catch(InterruptedException e){
+     *                 e.printStackTrace();
+     *             }
+     *         });
+     *
+     *         Thread t2 = new Thread(()-> {
+     *             try{
+     *                 test.consume();
+     *             }catch(InterruptedException e){
+     *                 e.printStackTrace;
+     *             }
+     *         });
+     *
+     *         t1.start();
+     *         t2.start();
+     *     }
+     * }
+     */
 }
