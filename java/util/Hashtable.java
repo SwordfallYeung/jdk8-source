@@ -137,6 +137,11 @@ import java.util.function.BiFunction;
  *
  * 与HashMap类似，Hashtable也是散列表的实现。它的内部结构是【数组 + 链表】的形式，比
  * HashMap的结构少了红黑树
+ *
+ * 总结：
+ * 1. 默认初始化容量为11，默认负载因子为0.75
+ * 2. 线程安全，使用synchronized关键字，并发效率低；
+ * 3. 若无保证线程安全，推荐使用 HashMap；若需要现场安全的高并发场景，推荐使用ConcurrentHashMap。
  */
 public class Hashtable<K,V>
     extends Dictionary<K,V>
@@ -383,6 +388,8 @@ public class Hashtable<K,V>
      *         {@code null} if this map contains no mapping for the key
      * @throws NullPointerException if the specified key is null
      * @see     #put(Object, Object)
+     *
+     * get方法，加上synchronized同步，桶循环查询方法
      */
     @SuppressWarnings("unchecked")
     public synchronized V get(Object key) {
@@ -413,6 +420,14 @@ public class Hashtable<K,V>
      * efficiently.  This method is called automatically when the
      * number of keys in the hashtable exceeds this hashtable's capacity
      * and load factor.
+     *
+     * 扩容操作：
+     * 若index位置为链表，且插入顺序为1、2、3，则在该位置的存储顺序为3、2、1。
+     * 扩容时，会从前往后读取元素并操作，因此扩容后的顺序为3、2、1. 示意图：
+     *
+     * index----3-- -> 2 -> 1       ----1-- -> 2 -> 3
+     *      -------                 -------
+     *      -------   ___扩容后___>  -------
      */
     @SuppressWarnings("unchecked")
     protected void rehash() {
@@ -420,13 +435,17 @@ public class Hashtable<K,V>
         Entry<?,?>[] oldMap = table;
 
         // overflow-conscious code
+        // 新容量为旧容量的 2 倍加 1
         int newCapacity = (oldCapacity << 1) + 1;
+        // 若新容量的值超过最大容量 MAX_ARRAY_SIZE， 且旧容量为 MAX_ARRAY_SIZE，则直接返回；
         if (newCapacity - MAX_ARRAY_SIZE > 0) {
             if (oldCapacity == MAX_ARRAY_SIZE)
                 // Keep running with MAX_ARRAY_SIZE buckets
                 return;
+            // 若旧容量值不为 MAX_ARRAY_SIZE，则新容量为 MAX_ARRAY_SIZE
             newCapacity = MAX_ARRAY_SIZE;
         }
+        // 新建一个 Entry 数组，容量为上面计算的容量大小
         Entry<?,?>[] newMap = new Entry<?,?>[newCapacity];
 
         modCount++;
@@ -439,6 +458,7 @@ public class Hashtable<K,V>
                 old = old.next;
 
                 int index = (e.hash & 0x7FFFFFFF) % newCapacity;
+                // 注意这里会调换顺序
                 e.next = (Entry<K,V>)newMap[index];
                 newMap[index] = e;
             }
@@ -463,7 +483,10 @@ public class Hashtable<K,V>
         // Creates the new entry.
         // 将 key-value 添加到table中（头插法，即插到链表的头部）
         // 即：先拿到 index 位置的元素，若为空，表示插入 entry 后则只有一个元素；
-        //     若不为空，表示该位置已有元素，将已有元素 e 连接到新的 entry 后面
+        //     若不为空，表示该位置已有元素，将已有元素 e 连接到新的 entry 后面，
+        //      这里是通过 Entry<>(hash, key, value, e) 构造函数，把已有元素 e 连接到 新元素 的后面（头插法），
+        //      这时新元素 new Entry<>(hash, key, value, e)就位于链表的头部。
+        //  这里与HashMap的插入不同，HashMap是插入到链表的尾部
         @SuppressWarnings("unchecked")
         Entry<K,V> e = (Entry<K,V>) tab[index];
         tab[index] = new Entry<>(hash, key, value, e);
@@ -486,6 +509,10 @@ public class Hashtable<K,V>
      *               <code>null</code>
      * @see     Object#equals(Object)
      * @see     #get(Object)
+     *
+     * put方法（包括后面分析的get和remove等方法）带有synchronized关键字，Hashtable就是通过
+     * 这种方式实现线程安全的。这里锁定的是整个table，因此并发效率较低，这也是高并发场景下推荐
+     * 使用ConcurrentHashMap的原因。
      */
     public synchronized V put(K key, V value) {
         // Make sure the value is not null
@@ -524,24 +551,35 @@ public class Hashtable<K,V>
      * @return  the value to which the key had been mapped in this hashtable,
      *          or <code>null</code> if the key did not have a mapping
      * @throws  NullPointerException  if the key is <code>null</code>
+     *
+     *
      */
     public synchronized V remove(Object key) {
         Entry<?,?> tab[] = table;
+        // 根据key计算hash值
         int hash = key.hashCode();
         int index = (hash & 0x7FFFFFFF) % tab.length;
+        // 找到key的hash值对应的数组下标节点
         @SuppressWarnings("unchecked")
         Entry<K,V> e = (Entry<K,V>)tab[index];
+        // prev为该数组下标链表的前一个节点，e为链表的当前节点
         for(Entry<K,V> prev = null ; e != null ; prev = e, e = e.next) {
+            // e.hash值和key都匹配，则找到需要删除的节点
             if ((e.hash == hash) && e.key.equals(key)) {
+                //修改计数器
                 modCount++;
+                // 若prev不为空，则把需要删除的节点e.next指向prev.next
                 if (prev != null) {
                     prev.next = e.next;
+                // 若prev为空，则表明为首节点，把需要删除的节点e.next指向头节点
                 } else {
                     tab[index] = e.next;
                 }
                 count--;
                 V oldValue = e.value;
+                // 置空，方便GC回收
                 e.value = null;
+                // 返回删除结点的值
                 return oldValue;
             }
         }
@@ -655,6 +693,8 @@ public class Hashtable<K,V>
      * Each of these fields are initialized to contain an instance of the
      * appropriate view the first time this view is requested.  The views are
      * stateless, so there's no reason to create more than one of each.
+     *
+     * 三种集合视图 EntrySet、keySet 和 values
      */
     private transient volatile Set<K> keySet;
     private transient volatile Set<Map.Entry<K,V>> entrySet;
