@@ -163,6 +163,13 @@ import java.util.concurrent.TimeUnit;
  *
  * @since 1.5
  * @author Doug Lea
+ *
+ * 涉及多线程问题，往往绕不开【锁】。在JDK1.5之前，Java通过synchronized关键字来实现锁的功能，
+ * 该方式是语法层面的，由JVM实现。JDK1.5增加了锁在API层面的实现，也就是java.util.concurrent.
+ * locks.Lock接口及其相关的实现类，它不仅具备 synchronized 的功能，而且还增加了更加丰富的功能。
+ * 通常与其配合使用的还有 Condition 接口
+ *
+ * lock类似synchronized，但比其多很多详细的api
  */
 public interface Lock {
 
@@ -180,6 +187,8 @@ public interface Lock {
      * may throw an (unchecked) exception in such circumstances.  The
      * circumstances and the exception type must be documented by that
      * {@code Lock} implementation.
+     *
+     * 阻塞式获取锁，该方法与 synchronized 功能类似
      */
     void lock();
 
@@ -228,6 +237,8 @@ public interface Lock {
      * @throws InterruptedException if the current thread is
      *         interrupted while acquiring the lock (and interruption
      *         of lock acquisition is supported)
+     *
+     * 获取锁，可响应中断
      */
     void lockInterruptibly() throws InterruptedException;
 
@@ -257,6 +268,8 @@ public interface Lock {
      *
      * @return {@code true} if the lock was acquired and
      *         {@code false} otherwise
+     *
+     * 尝试获取锁，若成功返回true；否则返回false
      */
     boolean tryLock();
 
@@ -317,6 +330,8 @@ public interface Lock {
      * @throws InterruptedException if the current thread is interrupted
      *         while acquiring the lock (and interruption of lock
      *         acquisition is supported)
+     *
+     * 尝试获取锁（在给定的时间内），若成功返回true；否则返回false
      */
     boolean tryLock(long time, TimeUnit unit) throws InterruptedException;
 
@@ -331,6 +346,9 @@ public interface Lock {
      * an (unchecked) exception if the restriction is violated.
      * Any restrictions and the exception
      * type must be documented by that {@code Lock} implementation.
+     *
+     *
+     * 释放锁
      */
     void unlock();
 
@@ -352,6 +370,8 @@ public interface Lock {
      * @return A new {@link Condition} instance for this {@code Lock} instance
      * @throws UnsupportedOperationException if this {@code Lock}
      *         implementation does not support conditions
+     *
+     * 创建一个与该锁绑定 Condition
      */
     Condition newCondition();
 }
