@@ -102,6 +102,11 @@ import java.util.Collection;
  *
  * @since 1.5
  * @author Doug Lea
+ *
+ * Lock接口在JDK中的实现类主要是ReentrantLock("重入锁")。ReentrantLock的实现主要依赖于其内部的
+ * 一个嵌套类Sync，而Sync又继承自AbstractQueuedSynchronizer（简称AQS）。而且，不仅ReentrantLock，
+ * 其他一些并发工具类如CountdownLatch、CyclicBarrier等，其实现也都是基于AQS类。AQS可以理解为并发包
+ * 中许多实现的基石。
  */
 public class ReentrantLock implements Lock, java.io.Serializable {
     private static final long serialVersionUID = 7373984872572414699L;
