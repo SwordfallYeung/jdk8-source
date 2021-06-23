@@ -285,6 +285,22 @@ import sun.misc.Unsafe;
  *
  * @since 1.5
  * @author Doug Lea
+ *
+ *  Lock接口在JDK中的实现类主要是ReentrantLock("重入锁")。ReentrantLock的实现主要依赖于其内部的
+ *  一个嵌套类Sync，而Sync又继承自AbstractQueuedSynchronizer（简称AQS）。而且，不仅ReentrantLock，
+ *  其他一些并发工具类如CountdownLatch、CyclicBarrier等，其实现也都是基于AQS类。AQS可以理解为并发包
+ *  中许多实现的基石。因此，在分析并发包中常用类的实现原理前，有必要先理解一下AQS，之后再分析的时候就会
+ *  简单不少。
+ *
+ *  AQS内部有一个核心变量state；此外，以Node类为节点维护了两种队列：主队列(main queue)和条件队列(condition queue)，
+ *  分别可以将二者理解为双链表和单链表。
+ *
+ *  AQS就像是提供了一套基础设施的设备，其它常用类如ReentrantLock、CountdownLatch等的内部嵌套类Sync，都是
+ *  在AQS提供的基础3设施之上制定了自己的"游戏规则"，进而生产出了不同的产品。而它们的游戏规则都是围绕state变量和这两种
+ *  队列进行操作的。
+ *
+ *  AbstractQueuedSynchronizer是一个抽象类，不能直接被实例化
+ *  AbstractQueuedLongSynchronizer 与AQS基本完全一样，区别在于前者的state变量为long类型，而AQS为int类型
  */
 public abstract class AbstractQueuedSynchronizer
     extends AbstractOwnableSynchronizer
@@ -379,11 +395,14 @@ public abstract class AbstractQueuedSynchronizer
      */
     static final class Node {
         /** Marker to indicate a node is waiting in shared mode */
+        // 共享模式
         static final Node SHARED = new Node();
         /** Marker to indicate a node is waiting in exclusive mode */
+        // 独占模式
         static final Node EXCLUSIVE = null;
 
         /** waitStatus value to indicate thread has cancelled */
+        // waitStatus的几种状态
         static final int CANCELLED =  1;
         /** waitStatus value to indicate successor's thread needs unparking */
         static final int SIGNAL    = -1;
@@ -441,6 +460,8 @@ public abstract class AbstractQueuedSynchronizer
          * head only as a result of successful acquire. A
          * cancelled thread never succeeds in acquiring, and a thread only
          * cancels itself, not any other node.
+         *
+         * 前驱节点（主队列）
          */
         volatile Node prev;
 
@@ -456,12 +477,16 @@ public abstract class AbstractQueuedSynchronizer
          * double-check.  The next field of cancelled nodes is set to
          * point to the node itself instead of null, to make life
          * easier for isOnSyncQueue.
+         *
+         * 后继节点（主队列）
          */
         volatile Node next;
 
         /**
          * The thread that enqueued this node.  Initialized on
          * construction and nulled out after use.
+         *
+         * 节点的线程
          */
         volatile Thread thread;
 
@@ -474,6 +499,8 @@ public abstract class AbstractQueuedSynchronizer
          * re-acquire. And because conditions can only be exclusive,
          * we save a field by using special value to indicate shared
          * mode.
+         *
+         * 后继节点（条件队列）
          */
         Node nextWaiter;
 
@@ -507,6 +534,8 @@ public abstract class AbstractQueuedSynchronizer
             this.thread = thread;
         }
 
+        // 添加到主队列用的是第二个构造器，Node类可以理解为对线程Thread的封装。因此，
+        // 在主队列中排队的一个个节点可以理解为一个个有模式(mode)，有状态(waitStatus)的线程。
         Node(Thread thread, int waitStatus) { // Used by Condition
             this.waitStatus = waitStatus;
             this.thread = thread;
@@ -514,23 +543,38 @@ public abstract class AbstractQueuedSynchronizer
     }
 
     /**
+     * AQS代码虽长，但它的成员变量却不多，如下
+     */
+
+    /**
      * Head of the wait queue, lazily initialized.  Except for
      * initialization, it is modified only via method setHead.  Note:
      * If head exists, its waitStatus is guaranteed not to be
      * CANCELLED.
+     *
+     * 主队列头节点
      */
     private transient volatile Node head;
 
     /**
      * Tail of the wait queue, lazily initialized.  Modified only via
      * method enq to add new wait node.
+     *
+     * 主队列尾节点
      */
     private transient volatile Node tail;
 
     /**
      * The synchronization state.
+     *
+     * 状态，AQS维护的一个核心变量
      */
     private volatile int state;
+
+    /**
+     * 其中，head和tail为主队列的头尾节点，state为AQS维护的核心变量，ReentrantLock等类中
+     * 的Sync类实现，都是通过操作state来实现各自功能的
+     */
 
     /**
      * Returns the current value of synchronization state.
@@ -1826,6 +1870,8 @@ public abstract class AbstractQueuedSynchronizer
      *
      * <p>This class is Serializable, but all fields are transient,
      * so deserialized conditions have no waiters.
+     *
+     * ConditionObject实现了Condition接口，它的主要操作的是条件队列
      */
     public class ConditionObject implements Condition, java.io.Serializable {
         private static final long serialVersionUID = 1173984872572414699L;
@@ -2257,7 +2303,9 @@ public abstract class AbstractQueuedSynchronizer
      * are at it, we do the same for other CASable fields (which could
      * otherwise be done with atomic field updaters).
      */
+    // 获取 Unsafe 实例
     private static final Unsafe unsafe = Unsafe.getUnsafe();
+    // state、head、tail 等变量的内存偏移地址
     private static final long stateOffset;
     private static final long headOffset;
     private static final long tailOffset;
@@ -2283,6 +2331,7 @@ public abstract class AbstractQueuedSynchronizer
     /**
      * CAS head field. Used only by enq.
      */
+    // 一些 CAS 操作
     private final boolean compareAndSetHead(Node update) {
         return unsafe.compareAndSwapObject(this, headOffset, null, update);
     }
@@ -2312,4 +2361,6 @@ public abstract class AbstractQueuedSynchronizer
                                                    Node update) {
         return unsafe.compareAndSwapObject(node, nextOffset, expect, update);
     }
+
+    // AQS 内部的许多操作都是通过 CAS 来实现线程安全的
 }
