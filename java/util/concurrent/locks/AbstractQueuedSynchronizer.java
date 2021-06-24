@@ -529,13 +529,13 @@ public abstract class AbstractQueuedSynchronizer
         Node() {    // Used to establish initial head or SHARED marker
         }
 
+        // 添加到主队列用的是第二个构造器，Node类可以理解为对线程Thread的封装。因此，
+        // 在主队列中排队的一个个节点可以理解为一个个有模式(mode)，有状态(waitStatus)的线程。
         Node(Thread thread, Node mode) {     // Used by addWaiter
             this.nextWaiter = mode;
             this.thread = thread;
         }
 
-        // 添加到主队列用的是第二个构造器，Node类可以理解为对线程Thread的封装。因此，
-        // 在主队列中排队的一个个节点可以理解为一个个有模式(mode)，有状态(waitStatus)的线程。
         Node(Thread thread, int waitStatus) { // Used by Condition
             this.waitStatus = waitStatus;
             this.thread = thread;
@@ -627,10 +627,13 @@ public abstract class AbstractQueuedSynchronizer
     private Node enq(final Node node) {
         for (;;) {
             Node t = tail;
+            // 尾节点为空，表示当前队列未初始化
             if (t == null) { // Must initialize
+                // 将队列的头尾节点都设置为一个新的节点
                 if (compareAndSetHead(new Node()))
                     tail = head;
             } else {
+                // 将 node 节点插入主队列末尾
                 node.prev = t;
                 if (compareAndSetTail(t, node)) {
                     t.next = node;
@@ -645,18 +648,28 @@ public abstract class AbstractQueuedSynchronizer
      *
      * @param mode Node.EXCLUSIVE for exclusive, Node.SHARED for shared
      * @return the new node
+     *
+     * addWaiter(Node.EXECUSIVE)方法的作用是：把当前线程封装成一个独占模式的Node节点，
+     * 并插入到主队列末尾（若主队列未初始化，则将其初始化后再插入）
      */
     private Node addWaiter(Node mode) {
+        // 将当前线程封装为一个 Node 节点，指定mode
+        // PS：独占模式 Node.EXECUSIVE，共享模式 Node.SHARED
         Node node = new Node(Thread.currentThread(), mode);
         // Try the fast path of enq; backup to full enq on failure
+        // 判断尾节点是否为空，不为空，则把节点node附加到尾节点tail上，这时节点node变为尾节点
         Node pred = tail;
         if (pred != null) {
+            // 节点node的前节点指为尾节点pred
             node.prev = pred;
+            // 通过 CAS 操作把新节点node设置主队列的尾节点
             if (compareAndSetTail(pred, node)) {
+                //尾节点pred的后节点指为node，node变为尾节点
                 pred.next = node;
                 return node;
             }
         }
+        // 如果尾节点tail为空，表示主队列未初始化
         enq(node);
         return node;
     }
@@ -678,6 +691,8 @@ public abstract class AbstractQueuedSynchronizer
      * Wakes up node's successor, if one exists.
      *
      * @param node the node
+     *
+     * 唤醒node的后继节点
      */
     private void unparkSuccessor(Node node) {
         /*
@@ -695,13 +710,17 @@ public abstract class AbstractQueuedSynchronizer
          * traverse backwards from tail to find the actual
          * non-cancelled successor.
          */
+        // 后继节点
         Node s = node.next;
+        // 若后继节点是取消状态（ws > 0）
         if (s == null || s.waitStatus > 0) {
             s = null;
+            // 则从尾节点向前遍历，找到 node 节点后面一个未取消状态(ws <= 0)的节点
             for (Node t = tail; t != null && t != node; t = t.prev)
                 if (t.waitStatus <= 0)
                     s = t;
         }
+        // 唤醒node 节点的后继节点
         if (s != null)
             LockSupport.unpark(s.thread);
     }
@@ -782,6 +801,16 @@ public abstract class AbstractQueuedSynchronizer
      * Cancels an ongoing attempt to acquire.
      *
      * @param node the node
+     *
+     * 三个获取资源的方法中，finally代码块中都用到了cancelAcquire方法，都是获取失败时的操作
+     *
+     * 该方法的主要操作：
+     *             1. 将node节点设置为取消（CANCELLED）状态；
+     *             2. 找到它在队列中非取消状态的前驱节点pred;
+     *                1）.若node节点是尾节点，则前驱节点的后继设为空；
+     *                2）.若pred不是头节点，且状态为SIGNAL，则后继节点设为node的后继节点；
+     *                3）.若pred是头节点，则唤醒node的后继节点。
+     * PS: 该过程可以跟双链表删除一个节点的过程进行对比分析
      */
     private void cancelAcquire(Node node) {
         // Ignore if node doesn't exist
@@ -791,6 +820,7 @@ public abstract class AbstractQueuedSynchronizer
         node.thread = null;
 
         // Skip cancelled predecessors
+        // 跳过取消状态的前驱节点
         Node pred = node.prev;
         while (pred.waitStatus > 0)
             node.prev = pred = pred.prev;
@@ -798,14 +828,17 @@ public abstract class AbstractQueuedSynchronizer
         // predNext is the apparent node to unsplice. CASes below will
         // fail if not, in which case, we lost race vs another cancel
         // or signal, so no further action is necessary.
+        // 前驱节点的后继节点引用
         Node predNext = pred.next;
 
         // Can use unconditional write instead of CAS here.
         // After this atomic step, other Nodes can skip past us.
         // Before, we are free of interference from other threads.
+        // 将当前节点设置为取消状态
         node.waitStatus = Node.CANCELLED;
 
         // If we are the tail, remove ourselves.
+        // 若该节点为尾节点（后面没其他节点了），将predNext指向null
         if (node == tail && compareAndSetTail(node, pred)) {
             compareAndSetNext(pred, predNext, null);
         } else {
@@ -820,6 +853,7 @@ public abstract class AbstractQueuedSynchronizer
                 if (next != null && next.waitStatus <= 0)
                     compareAndSetNext(pred, predNext, next);
             } else {
+                // 前驱节点为头节点，表明当前节点为第一个，取消时唤醒他的下一个节点
                 unparkSuccessor(node);
             }
 
@@ -835,15 +869,26 @@ public abstract class AbstractQueuedSynchronizer
      * @param pred node's predecessor holding status
      * @param node the node
      * @return {@code true} if thread should block
+     *
+     * 正如其名，shouldParkAfterFailedAcquire的作用就是判断当前线程在获取资源失败后，是否可以休眠（park）
+     *
+     * 该方法的流程：
+     * 1. 若前驱节点的等待状态为SIGNAL，返回true，表示当前线程可以休眠（park）；
+     * 2. 若前驱节点是取消状态(ws > 0)，则将其清理出队列，以此类推；
+     * 3. 若前驱节点为0或PROPAGATE，则将其设置为SIGNAL状态。
      */
     private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
+        // 前驱节点的等待状态
         int ws = pred.waitStatus;
+        // 若前驱节点的等待状态为SIGNAL，返回 true，表示当前线程可以休眠
         if (ws == Node.SIGNAL)
             /*
              * This node has already set status asking a release
              * to signal it, so it can safely park.
              */
             return true;
+        // 若前驱节点的状态大于0，表示前驱节点处于取消（CANCELLED）状态
+        // 则将前驱节点跳过（相当于踢出队列）
         if (ws > 0) {
             /*
              * Predecessor was cancelled. Skip over predecessors and
@@ -859,6 +904,7 @@ public abstract class AbstractQueuedSynchronizer
              * need a signal, but don't park yet.  Caller will need to
              * retry to make sure it cannot acquire before parking.
              */
+            // 此时 waitStatus 只能为0 或PROPAGATE状态，将前驱节点的等着状态设置为SIGNAL
             compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
         }
         return false;
@@ -875,6 +921,10 @@ public abstract class AbstractQueuedSynchronizer
      * Convenience method to park and then check if interrupted
      *
      * @return {@code true} if interrupted
+     *
+     * 该方法的作用：
+     * 1.使当前线程休眠（park）；
+     * 2.返回该线程是否被中断（其他线程对其发过中断信号）
      */
     private final boolean parkAndCheckInterrupt() {
         LockSupport.park(this);
@@ -897,19 +947,29 @@ public abstract class AbstractQueuedSynchronizer
      * @param node the node
      * @param arg the acquire argument
      * @return {@code true} if interrupted while waiting
+     *
+     * 若当前节点的前驱节点为头节点，则会再次尝试获取资源（tryAcquire），若获取成功，
+     * 则将当前节点设置为头节点并返回；否则，若前驱节点不是头节点，或者获取资源失败，
+     * 则执行如下两个方法shouldParkAfterFailedAcquire和parkAndCheckInterrupt
      */
     final boolean acquireQueued(final Node node, int arg) {
         boolean failed = true;
         try {
+            // 中断标志位
             boolean interrupted = false;
             for (;;) {
+                // 获取该节点的前驱节点
                 final Node p = node.predecessor();
+                // 若前驱节点为头节点，则尝试获取资源
                 if (p == head && tryAcquire(arg)) {
+                    // 若获取成功，则将该节点设置为头节点并返回
                     setHead(node);
                     p.next = null; // help GC
                     failed = false;
                     return interrupted;
                 }
+                // 若上面条件不满足，即前驱节点不是头节点，或尝试获取失败
+                // 判断当前线程是否可以休眠
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
                     interrupted = true;
@@ -923,22 +983,33 @@ public abstract class AbstractQueuedSynchronizer
     /**
      * Acquires in exclusive interruptible mode.
      * @param arg the acquire argument
+     *
+     * 通过与前面的acquireQueued方法对比可以发现，二者代码几乎一样，区别在于acquireQueued方法
+     * 检测到中断（parkAndCheckInterrupt）时只是记录了标志位，并未响应；而此处直接抛出了异常，
+     * 这也是二者仅有的区别
      */
     private void doAcquireInterruptibly(int arg)
         throws InterruptedException {
+        // 将当前线程封装成 Node 节点插入主队列末尾
         final Node node = addWaiter(Node.EXCLUSIVE);
         boolean failed = true;
         try {
             for (;;) {
+                // 获取该节点的前驱节点
                 final Node p = node.predecessor();
+                // 若前驱节点为头节点，则尝试获取资源
                 if (p == head && tryAcquire(arg)) {
+                    // 若获取成功，则将该节点设置为头节点并返回
                     setHead(node);
                     p.next = null; // help GC
                     failed = false;
                     return;
                 }
+                // 若上面条件不满足，即前驱节点不是头节点，或尝试获取失败
+                // 判断当前线程是否可以休眠
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
+                    // 抛出中断异常
                     throw new InterruptedException();
             }
         } finally {
@@ -953,29 +1024,43 @@ public abstract class AbstractQueuedSynchronizer
      * @param arg the acquire argument
      * @param nanosTimeout max wait time
      * @return {@code true} if acquired
+     *
+     * 该方法里面有个变量spinForTimeoutThreshold，表示自旋时间，若大于该值则将线程休眠，
+     * 否则继续自旋。个人理解这里增加该时间是为了提高效率，即，只有在等待时间较长的时候才让线程休眠。
+     *
+     * 该方法与doAcquireInterruptibly也是类似的，在前者的基础上增加了timeout
      */
     private boolean doAcquireNanos(int arg, long nanosTimeout)
             throws InterruptedException {
+        // 若超时时间小于等于0，直接获取失败
         if (nanosTimeout <= 0L)
             return false;
+        // 计算截止时间
         final long deadline = System.nanoTime() + nanosTimeout;
+        // 将当前线程封装成 Node 节点插入主队列末尾
         final Node node = addWaiter(Node.EXCLUSIVE);
         boolean failed = true;
         try {
             for (;;) {
+                // 获取该节点的前驱节点
                 final Node p = node.predecessor();
+                // 若前驱节点为头节点，则尝试获取资源
                 if (p == head && tryAcquire(arg)) {
+                    // 若获取成功，则将该节点设置为头节点并返回
                     setHead(node);
                     p.next = null; // help GC
                     failed = false;
                     return true;
                 }
                 nanosTimeout = deadline - System.nanoTime();
+                // nanosTimeout小于0，已经超时了，
                 if (nanosTimeout <= 0L)
                     return false;
+                // 若大于自旋时间，则线程休眠；否则自旋
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     nanosTimeout > spinForTimeoutThreshold)
                     LockSupport.parkNanos(this, nanosTimeout);
+                // 若被中断，则响应
                 if (Thread.interrupted())
                     throw new InterruptedException();
             }
@@ -1115,6 +1200,12 @@ public abstract class AbstractQueuedSynchronizer
      *         thrown in a consistent fashion for synchronization to work
      *         correctly.
      * @throws UnsupportedOperationException if exclusive mode is not supported
+     *
+     * 该方法的作用是尝试以独占模式获取资源，若成功则返回true
+     *
+     * 可以看到该方法是一个protected方法，而且AQS中该方法直接抛出了异常，其实是它把实现
+     * 委托给了子类，这也是ReentrantLock、CountdownLatch等类（严格来说是其内部类Sync）
+     * 的实现功能不同的地方，这些类正是通过对该方法的不同实现类制定了自己的"游戏规则"
      */
     protected boolean tryAcquire(int arg) {
         throw new UnsupportedOperationException();
@@ -1141,6 +1232,8 @@ public abstract class AbstractQueuedSynchronizer
      *         thrown in a consistent fashion for synchronization to work
      *         correctly.
      * @throws UnsupportedOperationException if exclusive mode is not supported
+     *
+     * 与tryAcquire方法类似，tryRelease方法在AQS中也是抛出异常，同样交由子类实现
      */
     protected boolean tryRelease(int arg) {
         throw new UnsupportedOperationException();
@@ -1227,6 +1320,10 @@ public abstract class AbstractQueuedSynchronizer
     }
 
     /**
+     * 独占模式 start
+     */
+
+    /**
      * Acquires in exclusive mode, ignoring interrupts.  Implemented
      * by invoking at least once {@link #tryAcquire},
      * returning on success.  Otherwise the thread is queued, possibly
@@ -1237,10 +1334,23 @@ public abstract class AbstractQueuedSynchronizer
      * @param arg the acquire argument.  This value is conveyed to
      *        {@link #tryAcquire} but is otherwise uninterpreted and
      *        can represent anything you like.
+     *
+     * exclusive mode 独占模式
+     *
+     * 以独占模式获取资源，忽略中断；可以类比Lock接口的lock方法
      */
     public final void acquire(int arg) {
+        // 下面代码包含了四个操作步骤
+        // 1.tryAcquire，  尝试以独占模式获取资源，若成功则返回true
+        // 2.addWaiter(Node.EXECLUSIVE)，
+        // 3.acquireQueued(final Node node, arg)，
+        // 4.selfInterrupt
+
+        //若step1中的 tryAcquire 方法返回true，则表示当前线程获取资源成功，方法直接返回，
+        //该线程接下来就可以“为所欲为”了；否则表示获取失败，接下来会依次执行step2和step3.
         if (!tryAcquire(arg) &&
             acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+            // 若此期间被其他线程中断过，则此时再去执行selfInterrupt方法去响应中断请求：
             selfInterrupt();
     }
 
@@ -1257,12 +1367,19 @@ public abstract class AbstractQueuedSynchronizer
      *        {@link #tryAcquire} but is otherwise uninterpreted and
      *        can represent anything you like.
      * @throws InterruptedException if the current thread is interrupted
+     *
+     * 以独占模式获取资源，响应中断；可以类比Lock接口的lockInterruptibly方法，Interruptibly意思为可中断的
+     *
+     * 该操作其实与前面的过程类似
      */
     public final void acquireInterruptibly(int arg)
             throws InterruptedException {
+        // 若线程被中断过，则抛出异常
         if (Thread.interrupted())
             throw new InterruptedException();
+        // 尝试获取资源，若尝试获取资源成功则直接返回；否则，执行doAcquireInterruptibly
         if (!tryAcquire(arg))
+            // 尝试获取资源失败
             doAcquireInterruptibly(arg);
     }
 
@@ -1282,14 +1399,27 @@ public abstract class AbstractQueuedSynchronizer
      * @param nanosTimeout the maximum number of nanoseconds to wait
      * @return {@code true} if acquired; {@code false} if timed out
      * @throws InterruptedException if the current thread is interrupted
+     *
+     * 以独占模式获取资源，响应中断，且有超时等待；可以类似Lock接口的tryLock(long TimeUnit)方法
+     *
+     * Nanos是纳米意思，nanosTimeout：纳秒级别的最大时间去等待
      */
     public final boolean tryAcquireNanos(int arg, long nanosTimeout)
             throws InterruptedException {
+        // 若被中断，则响应抛出异常
         if (Thread.interrupted())
             throw new InterruptedException();
         return tryAcquire(arg) ||
             doAcquireNanos(arg, nanosTimeout);
     }
+
+    /**
+     * 独占模式 end
+     */
+
+    /**
+     * 前面分析了三种获取资源的方式，自然也有释放资源，下面分析释放资源的release操作
+     */
 
     /**
      * Releases in exclusive mode.  Implemented by unblocking one or
@@ -1300,11 +1430,17 @@ public abstract class AbstractQueuedSynchronizer
      *        {@link #tryRelease} but is otherwise uninterpreted and
      *        can represent anything you like.
      * @return the value returned from {@link #tryRelease}
+     *
+     * 释放资源，可以类比Lock接口的unlock方法
      */
     public final boolean release(int arg) {
+        // 尝试释放资源，若成功则返回true
         if (tryRelease(arg)) {
             Node h = head;
+            // 若头节点不为空，且等待状态不为0（此时为SIGNAL）
+            // 则唤醒其后继节点
             if (h != null && h.waitStatus != 0)
+                // 唤醒node的后继节点
                 unparkSuccessor(h);
             return true;
         }
