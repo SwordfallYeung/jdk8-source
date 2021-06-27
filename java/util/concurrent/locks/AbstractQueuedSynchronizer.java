@@ -301,6 +301,63 @@ import sun.misc.Unsafe;
  *
  *  AbstractQueuedSynchronizer是一个抽象类，不能直接被实例化
  *  AbstractQueuedLongSynchronizer 与AQS基本完全一样，区别在于前者的state变量为long类型，而AQS为int类型
+ *
+ *  场景分析：
+ *  为了便于理解独占模式和共享模式下队列和节点的状态，下面简要举例分析。
+ *  场景如下：有T0-T4共5个线程按先后顺序获取资源，其中T2和T3为共享模式，T0、T1和T4为独占模式。
+ *  就此场景分析：T0先获取到资源（假设占用时间较长），而后T1-T4再获取则失败，会依次进入主队列。此时主队列中
+ *  各个节点的状态示意图如下：
+ *            head                                                                                                                            tail
+ *  ------------------------        ------------------------        ------------------------        ------------------------        ------------------------
+ *  |          T0          |  --->  |          T1          |  --->  |          T2          |  --->  |          T3          |  --->  |          T4          |
+ *  |    nextWaiter=null   |        | nextWaiter=EXCLUSIVE |        |   nextWaiter=SHARED  |        |   nextWaiter=SHARED  |        | nextWaiter=EXCLUSIVE |
+ *  |       ws=SIGNAL      |        |      ws=SIGNAL       |        |      ws=SIGNAL       |        |      ws=SIGNAL       |        |      ws=SIGNAL       |
+ *  |       prev=null      | <---   |       prev=T0        | <---   |       prev=T1        | <---   |       prev=T2        | <---   |       prev=T3        |
+ *  |        next=T1       |        |       next=T2        |        |       next=T3        |        |       next=T4        |        |      next=null       |
+ *  ------------------------        ------------------------        ------------------------        ------------------------        ------------------------
+ *
+ *  之后，T0操作完毕并释放资源，会将T1唤醒。T1(独占模式)会从acquireQueued(final Node node，int arg)方法的循环中继续获取资源，
+ *  这时会获取成功，并将T1设置为头节点（T0被移除）。此时主队列节点示意图如下：
+ *                             head                                                                                            tail
+ *                   ------------------------        ------------------------        ------------------------        ------------------------
+ *                   |          T1          |  --->  |          T2          |  --->  |          T3          |  --->  |          T4          |
+ *                   | nextWaiter=EXCLUSIVE |        |   nextWaiter=SHARED  |        |   nextWaiter=SHARED  |        | nextWaiter=EXCLUSIVE |
+ *  T0释放，T1获取   |      ws=SIGNAL       |        |      ws=SIGNAL       |        |      ws=SIGNAL       |        |         ws=0         |
+ *                   |       prev=T0        | <---   |       prev=T1        | <---   |       prev=T2        | <---   |       prev=T3        |
+ *                   |       next=T2        |        |       next=T3        |        |       next=T4        |        |      next=null       |
+ *                   ------------------------        ------------------------        ------------------------        ------------------------
+ * 此时，T1获取到资源并进行相关操作
+ *
+ * 而后，T1操作完释放资源，并唤醒下一个节点T2，T2(共享模式)继续从doAcquireShared(int)方法的循环中执行。此时T2获取资源成功，
+ * 将自身设为头节点(T1被移除)，由于后继节点T3也是共享模式，因此T1会继续唤醒T3；T3唤醒后的操作与T2相同，但后继节点T4不是共享
+ * 模式，因此不再继续唤醒。此时队列节点状态示意图如下：
+ *                                                             head                                                            tail
+ *                   ------------------------        ------------------------        ------------------------        ------------------------
+ *                   |          T1          |  --->  |          T2          |  --->  |          T3          |  --->  |          T4          |
+ *                   | nextWaiter=EXCLUSIVE |        |   nextWaiter=SHARED  |        |   nextWaiter=SHARED  |        | nextWaiter=EXCLUSIVE |
+ *  T1释放，T2获取   |         ws=0         |        |         ws=0         |        |      ws=SIGNAL       |        |         ws=0         |
+ *                   |      prev=null       | <---   |       prev=null      | <---   |       prev=T2        | <---   |       prev=T3        |
+ *                   |      next=null       |        |       next=T3        |        |       next=T4        |        |      next=null       |
+ *                   ------------------------        ------------------------        ------------------------        ------------------------
+ *                                                                                             head                            tail
+ *                                                   ------------------------        ------------------------        ------------------------
+ *                                                   |          T2          |  --->  |          T3          |  --->  |          T4          |
+ *                                                   |   nextWaiter=SHARED  |        |   nextWaiter=SHARED  |        | nextWaiter=EXCLUSIVE |
+ *                                                   |         ws=0         |        |      ws=SIGNAL       |        |         ws=0         |
+ *                                                   |       prev=null      | <---   |      prev=null       | <---   |       prev=T3        |
+ *                                                   |       next=null      |        |       next=T4        |        |      next=null       |
+ *                                                   ------------------------        ------------------------        ------------------------
+ * 此时，T2和T3同时获取到资源。
+ * 之后，当二者都释放资源后唤醒T4：
+ *                                                           head/tail
+ *                   ------------------------        ------------------------
+ *                   |          T3          |  --->  |          T4          |
+ *                   |   nextWaiter=SHARED  |        | nextWaiter=EXCLUSIVE |
+ *  T3释放，T4获取   |         ws=0         |        |         ws=0         |
+ *                   |      prev=null       | <---   |       prev=T3        |
+ *                   |      next=null       |        |      next=null       |
+ *                   ------------------------        ------------------------
+ * T4获取资源的与T1类似
  */
 public abstract class AbstractQueuedSynchronizer
     extends AbstractOwnableSynchronizer
@@ -743,18 +800,22 @@ public abstract class AbstractQueuedSynchronizer
          * fails, if so rechecking.
          */
         for (;;) {
+            // 这里的头节点已经是上面设置后的头节点了
             Node h = head;
+            // 由于该方法有两个入口（setHeadAndPropagate 和 releaseShared），需考虑并发控制
             if (h != null && h != tail) {
                 int ws = h.waitStatus;
                 if (ws == Node.SIGNAL) {
                     if (!compareAndSetWaitStatus(h, Node.SIGNAL, 0))
                         continue;            // loop to recheck cases
+                    // 唤醒后继节点
                     unparkSuccessor(h);
                 }
                 else if (ws == 0 &&
                          !compareAndSetWaitStatus(h, 0, Node.PROPAGATE))
                     continue;                // loop on failed CAS
             }
+            // 若头节点不变，则跳出循环；否则继续循环
             if (h == head)                   // loop if head changed
                 break;
         }
@@ -767,9 +828,13 @@ public abstract class AbstractQueuedSynchronizer
      *
      * @param node the node
      * @param propagate the return value from a tryAcquireShared
+     *
+     *
      */
     private void setHeadAndPropagate(Node node, int propagate) {
+        // 记录旧的头节点
         Node h = head; // Record old head for check below
+        // 将 node 设置为头节点
         setHead(node);
         /*
          * Try to signal next queued node if:
@@ -790,6 +855,7 @@ public abstract class AbstractQueuedSynchronizer
         if (propagate > 0 || h == null || h.waitStatus < 0 ||
             (h = head) == null || h.waitStatus < 0) {
             Node s = node.next;
+            // 后继节点为空或共享模式唤醒
             if (s == null || s.isShared())
                 doReleaseShared();
         }
@@ -1073,17 +1139,28 @@ public abstract class AbstractQueuedSynchronizer
     /**
      * Acquires in shared uninterruptible mode.
      * @param arg the acquire argument
+     *
+     * doAcquireShared方法会把当前线程封装成一个共享模式（SHARED）的节点，
+     * 并插入主队列末尾。
+     *
+     * 该方法与acquireQueued方法的区别在于 setHeadAndPropagate 方法，把当前节点设置为头节点之后，
+     * 还会有传播（propagate）行为
      */
     private void doAcquireShared(int arg) {
+        // 把当前线程封装成共享模式的 Node 节点，插入主队列末尾
         final Node node = addWaiter(Node.SHARED);
         boolean failed = true;
         try {
+            // 中断标志位
             boolean interrupted = false;
             for (;;) {
                 final Node p = node.predecessor();
+                // 若前驱节点为头节点，则尝试获取资源
                 if (p == head) {
                     int r = tryAcquireShared(arg);
+                    // 这里表示当前线程成功获取到了资源
                     if (r >= 0) {
+                        // 设置头节点，并传播状态（注意这里与独占模式不同）
                         setHeadAndPropagate(node, r);
                         p.next = null; // help GC
                         if (interrupted)
@@ -1092,12 +1169,14 @@ public abstract class AbstractQueuedSynchronizer
                         return;
                     }
                 }
+                // 是否应该休眠（与独占模式相同，不再赘述）
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
                     interrupted = true;
             }
         } finally {
             if (failed)
+                // 取消操作（与独占模式相同）
                 cancelAcquire(node);
         }
     }
@@ -1105,9 +1184,14 @@ public abstract class AbstractQueuedSynchronizer
     /**
      * Acquires in shared interruptible mode.
      * @param arg the acquire argument
+     *
+     * acquireSharedInterruptibly 方法与acquireShared方法几乎完全一样，
+     * 不同之处仅在于前者会抛出InterruptedException 异常响应中断；而后者
+     *            仅记录标志位，获取结束后才响应
      */
     private void doAcquireSharedInterruptibly(int arg)
         throws InterruptedException {
+        // 把当前线程封装成共享模式节点，并插入主队列末尾
         final Node node = addWaiter(Node.SHARED);
         boolean failed = true;
         try {
@@ -1122,6 +1206,7 @@ public abstract class AbstractQueuedSynchronizer
                         return;
                     }
                 }
+                // 与doAcquireShared 相比，区别在于这里抛出了异常
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
                     throw new InterruptedException();
@@ -1138,6 +1223,9 @@ public abstract class AbstractQueuedSynchronizer
      * @param arg the acquire argument
      * @param nanosTimeout max wait time
      * @return {@code true} if acquired
+     *
+     * 该方法可与独占模式下的超时等待方法tryAcquireNanos(int arg, long nanosTimeout)进行对比，
+     * 二者操作基本一致，不再详细分析。
      */
     private boolean doAcquireSharedNanos(int arg, long nanosTimeout)
             throws InterruptedException {
@@ -1270,6 +1358,16 @@ public abstract class AbstractQueuedSynchronizer
      *         thrown in a consistent fashion for synchronization to work
      *         correctly.
      * @throws UnsupportedOperationException if shared mode is not supported
+     *
+     * 尝试以共享模式获取资源（返回值为int类型）
+     *
+     * 与独占模式的tryAcquire()方法类似，tryAcquireShared方法在AQS中抛出异常，由子类实现其逻辑
+     *
+     * 不同的地方在于，tryAcquire方法的返回结果时boolean类型，表示获取成功与否；
+     * 而tryAcquireShared的返回结果是int类型，分别为：
+     * 1.负数：表示获取失败；
+     * 2.零：表示获取成功，但后续共享模式的获取会失败；
+     * 3.正数：表示获取成功，后续共享模式的获取可能会成功（需要进行检测）
      */
     protected int tryAcquireShared(int arg) {
         throw new UnsupportedOperationException();
@@ -1448,6 +1546,10 @@ public abstract class AbstractQueuedSynchronizer
     }
 
     /**
+     * 共享模式 start
+     */
+
+    /**
      * Acquires in shared mode, ignoring interrupts.  Implemented by
      * first invoking at least once {@link #tryAcquireShared},
      * returning on success.  Otherwise the thread is queued, possibly
@@ -1457,9 +1559,14 @@ public abstract class AbstractQueuedSynchronizer
      * @param arg the acquire argument.  This value is conveyed to
      *        {@link #tryAcquireShared} but is otherwise uninterpreted
      *        and can represent anything you like.
+     *
+     * 以共享模式获取资源，忽略中断
      */
     public final void acquireShared(int arg) {
+        // 返回值小于0，表示获取失败
+        // 若tryAcquireShared获取成功，则直接返回；否则执行doAcquireShared方法：
         if (tryAcquireShared(arg) < 0)
+            // 会把当前线程封装成一个共享模式（SHARED）的节点，并插入主队列末尾
             doAcquireShared(arg);
     }
 
@@ -1475,11 +1582,16 @@ public abstract class AbstractQueuedSynchronizer
      * otherwise uninterpreted and can represent anything
      * you like.
      * @throws InterruptedException if the current thread is interrupted
+     *
+     * 以共享模式获取资源，响应中断
+     *
+     * 该方法与acquireShared类似
      */
     public final void acquireSharedInterruptibly(int arg)
             throws InterruptedException {
         if (Thread.interrupted())
             throw new InterruptedException();
+        // 执行tryAcquireShared获取资源，若获取资源失败，则会执行doAcquireSharedInterruptibly方法
         if (tryAcquireShared(arg) < 0)
             doAcquireSharedInterruptibly(arg);
     }
@@ -1499,6 +1611,10 @@ public abstract class AbstractQueuedSynchronizer
      * @param nanosTimeout the maximum number of nanoseconds to wait
      * @return {@code true} if acquired; {@code false} if timed out
      * @throws InterruptedException if the current thread is interrupted
+     *
+     * 以共享模式获取资源，响应中断，且有超时等待
+     *
+     * 该方法可与前文独占模式下的超时获取方法比较分析
      */
     public final boolean tryAcquireSharedNanos(int arg, long nanosTimeout)
             throws InterruptedException {
@@ -1516,6 +1632,10 @@ public abstract class AbstractQueuedSynchronizer
      *        {@link #tryReleaseShared} but is otherwise uninterpreted
      *        and can represent anything you like.
      * @return the value returned from {@link #tryReleaseShared}
+     *
+     * 释放资源，唤醒后继节点，并确保传播状态
+     *
+     * 本方法与独占模式的release()方法类似，不同的地方在于“传播”二字
      */
     public final boolean releaseShared(int arg) {
         if (tryReleaseShared(arg)) {
@@ -1524,6 +1644,10 @@ public abstract class AbstractQueuedSynchronizer
         }
         return false;
     }
+
+    /**
+     * 共享模式 end
+     */
 
     // Queue inspection methods
 
