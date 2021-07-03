@@ -135,6 +135,15 @@ import java.util.concurrent.locks.ReentrantLock;
  * @see CountDownLatch
  *
  * @author Doug Lea
+ *
+ * CyclicBarrier是并发包中的一个工具类，它的典型应用场景为：几个线程执行完任务后，执行另一个线程（回调函数，可选），
+ * 然后继续下一轮，如此往复。
+ *
+ * 打个通俗的比方，可以把CyclicBarrier的执行流程比作：几个人（类比线程）围着操作跑圈，所有人都到达终点后（终点可理解为
+ * “屏障（barrier）”，到达次序可能有先后，对应线程执行任务有快慢），执行某个操作（回调函数），然后再继续跑下一圈（下一次循环），
+ * 如此往复。
+ *
+ * 该类与CountDownLatch相比，可以把后者理解为“一次性（one-shot）”操作，而前者是“可循环”的操作。
  */
 public class CyclicBarrier {
     /**
@@ -147,6 +156,10 @@ public class CyclicBarrier {
      * and all the rest are either broken or tripped.
      * There need not be an active generation if there has been a break
      * but no subsequent reset.
+     *
+     * 内部嵌套类
+     *
+     * 内部嵌套类Generation表示代数，每次屏障（barrier）破环之前属于同一代，之后进入下一代
      */
     private static class Generation {
         boolean broken = false;
@@ -263,6 +276,11 @@ public class CyclicBarrier {
     }
 
     /**
+     * CyclicBarrier有两个构造器，其中后者可以传入一个回调函数（barrierAction），
+     * parties表示await的线程数
+     */
+
+    /**
      * Creates a new {@code CyclicBarrier} that will trip when the
      * given number of parties (threads) are waiting upon it, and which
      * will execute the given barrier action when the barrier is tripped,
@@ -273,6 +291,8 @@ public class CyclicBarrier {
      * @param barrierAction the command to execute when the barrier is
      *        tripped, or {@code null} if there is no action
      * @throws IllegalArgumentException if {@code parties} is less than 1
+     *
+     * 有回调函数
      */
     public CyclicBarrier(int parties, Runnable barrierAction) {
         if (parties <= 0) throw new IllegalArgumentException();
@@ -289,6 +309,8 @@ public class CyclicBarrier {
      * @param parties the number of threads that must invoke {@link #await}
      *        before the barrier is tripped
      * @throws IllegalArgumentException if {@code parties} is less than 1
+     *
+     * 无回调函数
      */
     public CyclicBarrier(int parties) {
         this(parties, null);
@@ -356,6 +378,8 @@ public class CyclicBarrier {
      *         waiting, or the barrier was reset, or the barrier was
      *         broken when {@code await} was called, or the barrier
      *         action (if present) failed due to an exception
+     *
+     * 阻塞式等待
      */
     public int await() throws InterruptedException, BrokenBarrierException {
         try {
@@ -364,6 +388,10 @@ public class CyclicBarrier {
             throw new Error(toe); // cannot happen
         }
     }
+
+    /**
+     * 两个await方法都是调用dowait方法来实现的（该方法也是CyclicBarrier的核心方法）
+     */
 
     /**
      * Waits until all {@linkplain #getParties parties} have invoked
@@ -427,6 +455,8 @@ public class CyclicBarrier {
      *         waiting, or the barrier was reset, or the barrier was broken
      *         when {@code await} was called, or the barrier action (if
      *         present) failed due to an exception
+     *
+     * 有超时的等待
      */
     public int await(long timeout, TimeUnit unit)
         throws InterruptedException,
