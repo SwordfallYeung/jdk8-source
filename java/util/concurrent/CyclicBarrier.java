@@ -144,6 +144,58 @@ import java.util.concurrent.locks.ReentrantLock;
  * 如此往复。
  *
  * 该类与CountDownLatch相比，可以把后者理解为“一次性（one-shot）”操作，而前者是“可循环”的操作。
+ *
+ * 为了便于理解CyclicBarrier的用法，下面简单举例演示：
+ * public class CyclicBarrierTest{
+ *     private static final int COUNT = 3;
+ *
+ *     public static void main(String[] args) throws InterruptedException{
+ *         //初始化 CyclicBarrier 对象及回调函数
+ *         CyclicBarrier cyclicBarrier = new CyclicBarrier(COUNT, () -> {
+ *             // 模拟回调函数的操作（模拟写操作）
+ *             System.out.println(Thread.currentThread().getName() + " start writing..");
+ *             try{
+ *                 TimeUnit.SECONDS.sleep(1);
+ *             } catch(InterruptedException e){
+ *                 e.printStackTrace();
+ *             }
+ *             System.out.println("----------");
+ *         });
+ *
+ *         while(true){
+ *             // 创建几个线程执行任务
+ *             for(int i = 0; i < COUNT; i++){
+ *                 new Thread(() -> {
+ *                     // 模拟操作
+ *                     System.out.println(Thread.currentThread().getName() + " is reading.. " );
+ *                     try{
+ *                         TimeUnit.SECONDS.sleep(3);
+ *                         //等待
+ *                         cyclicBarrier.await();
+ *                     }catch(InterruptedException | BrokenBarrierException e){
+ *                         e.printStackTrace();
+ *                     }
+ *                 }).start();
+ *             }
+ *             // 睡眠 10 秒，然后进入下一轮
+ *             TimeUnit.SECONDS.sleep(10);
+ *         }
+ *     }
+ * }
+ *
+ * /*  执行结果（仅供参考）：
+ *     Thread-0 is reading..
+ *     Thread-1 is reading..
+ *     Thread-2 is reading..
+ *     Thread-1 start writing..
+ *     ---------
+ *     Thread-3 is reading..
+ *     Thread-4 is reading..
+ *     Thread-5 is reading..
+ *     Thread-5 start writing..
+ *     ---------
+ * PS：此处模拟多个线程执行读操作，都读完后再执行写操作；之后再读、再写。。。。。。可以
+ * 理解为简单的对账系统
  */
 public class CyclicBarrier {
     /**
@@ -186,6 +238,8 @@ public class CyclicBarrier {
     /**
      * Updates state on barrier trip and wakes up everyone.
      * Called only while holding lock.
+     *
+     * 进入下一轮
      */
     private void nextGeneration() {
         // signal completion of last generation
@@ -198,6 +252,8 @@ public class CyclicBarrier {
     /**
      * Sets current barrier generation as broken and wakes up everyone.
      * Called only while holding lock.
+     *
+     * 破坏屏障
      */
     private void breakBarrier() {
         generation.broken = true;
@@ -207,6 +263,10 @@ public class CyclicBarrier {
 
     /**
      * Main barrier code, covering the various policies.
+     *
+     * 执行流程：初始化时 parties 和 count 的值相同（由构造器parties参数传入），之后每有
+     * 一个线程调用await方法 count 值就减1， 直至count为0时（若不为0则等待），执行传入的回调函数
+     * barrierCommand（若不为空），然后唤醒所有线程，并将count重置为parties，开始下一轮操作。
      */
     private int dowait(boolean timed, long nanos)
         throws InterruptedException, BrokenBarrierException,
@@ -214,8 +274,10 @@ public class CyclicBarrier {
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
+            // 获取当前代
             final Generation g = generation;
 
+            // 若屏障破坏，则抛出异常
             if (g.broken)
                 throw new BrokenBarrierException();
 
@@ -224,14 +286,19 @@ public class CyclicBarrier {
                 throw new InterruptedException();
             }
 
+            // count 减 1
             int index = --count;
             if (index == 0) {  // tripped
+                // 传入的回调函数
                 boolean ranAction = false;
                 try {
                     final Runnable command = barrierCommand;
                     if (command != null)
+                        // 若传了回调函数，则执行回调函数
+                        // PS: 由此可知，回调函数由最后一个执行结束的线程执行
                         command.run();
                     ranAction = true;
+                    // 进入下一代（下一轮操作）
                     nextGeneration();
                     return 0;
                 } finally {
@@ -243,6 +310,7 @@ public class CyclicBarrier {
             // loop until tripped, broken, interrupted, or timed out
             for (;;) {
                 try {
+                    // count 不为0 时，当前线程进入等待状态
                     if (!timed)
                         trip.await();
                     else if (nanos > 0L)
