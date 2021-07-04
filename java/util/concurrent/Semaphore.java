@@ -152,6 +152,15 @@ import java.util.concurrent.locks.AbstractQueuedSynchronizer;
  *
  * @since 1.5
  * @author Doug Lea
+ *
+ * Semaphore是并发包中的一个工具类，可理解为信号量。通常可以作为限流器使用，即限制访问
+ * 某个资源的线程个数，比如用于限制连接池的连接数。
+ *
+ * 打个通俗的比方，可以把Semaphore理解为一辆公交车：车上的座位数（初始化的“许可” permits数量）
+ * 是固定的，行驶期间如果有人上车（获取许可），座位数（许可数量）就会减少，当人满的时候不能再继续
+ * 上车了（获取许可失败）；而有人下车（释放许可）后就空出了一些座位，其他人就可以继续上车了。
+ *
+ * 其中主要方法时acquire()和release()相关的一系列方法，它们的作用类似。
  */
 public class Semaphore implements java.io.Serializable {
     private static final long serialVersionUID = -3222578661600680210L;
