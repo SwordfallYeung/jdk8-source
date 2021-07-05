@@ -232,6 +232,8 @@ public class CyclicBarrier {
      * Number of parties still waiting. Counts down from parties to 0
      * on each generation.  It is reset to parties on each new
      * generation or when broken.
+     *
+     * 核心变量，构造两个核心变量，一个保持不变，一个变化，但每次循环都count重置为parties，循环的原理
      */
     private int count;
 
