@@ -93,20 +93,26 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
     private static final long serialVersionUID = -817911632652898426L;
 
     /** The queued items */
+    // 内部保存元素的数组
     final Object[] items;
 
     /** items index for next take, poll, peek or remove */
+    // 出队操作索引
     int takeIndex;
 
     /** items index for next put, offer, or add */
+    // 入队操作索引
     int putIndex;
 
     /** Number of elements in the queue */
+    // 队列总数
     int count;
 
     /*
      * Concurrency control uses the classic two-condition algorithm
      * found in any textbook.
+     *
+     * 双条件（notEmpty、notFull）算法用于并发控制
      */
 
     /** Main lock guarding all access */
@@ -288,6 +294,7 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
      */
     public ArrayBlockingQueue(int capacity, boolean fair,
                               Collection<? extends E> c) {
+        // 调用构造器2 初始化ArrayBlockingQueue对象
         this(capacity, fair);
 
         final ReentrantLock lock = this.lock;
@@ -295,16 +302,21 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         try {
             int i = 0;
             try {
+                // 遍历给定集合的元素，将其插入数组
                 for (E e : c) {
                     checkNotNull(e);
                     items[i++] = e;
                 }
+                // 注意可能会发生数组越界
             } catch (ArrayIndexOutOfBoundsException ex) {
                 throw new IllegalArgumentException();
             }
+            // 数组中元素的数量
             count = i;
+            // 入队操作（put/offer等方法）的数组下标，若数组已满则为0
             putIndex = (i == capacity) ? 0 : i;
         } finally {
+            // 注意释放锁
             lock.unlock();
         }
     }
