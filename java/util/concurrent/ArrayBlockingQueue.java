@@ -78,6 +78,8 @@ import java.util.Spliterator;
  * @since 1.5
  * @author Doug Lea
  * @param <E> the type of elements held in this collection
+ *
+ * ArrayBlockingQueue的内部是由数组实现的
  */
 public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         implements BlockingQueue<E>, java.io.Serializable {
@@ -234,8 +236,11 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
      *
      * @param capacity the capacity of this queue
      * @throws IllegalArgumentException if {@code capacity < 1}
+     *
+     * 构造器 1：初始化 ArrayBlockingQueue 对象，使用给定的容量
      */
     public ArrayBlockingQueue(int capacity) {
+        // 调用构造器 2 进行初始化，默认使用非公平锁
         this(capacity, false);
     }
 
@@ -248,12 +253,17 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
      *        on insertion or removal, are processed in FIFO order;
      *        if {@code false} the access order is unspecified.
      * @throws IllegalArgumentException if {@code capacity < 1}
+     *
+     * 构造器 2：使用给定容量及是否公平初始化 ArrayBlockingQueue 对象
      */
     public ArrayBlockingQueue(int capacity, boolean fair) {
         if (capacity <= 0)
             throw new IllegalArgumentException();
+        // 用给定的容量初始化内部数组
         this.items = new Object[capacity];
+        // 创建锁对象（根据 fair 参数确定是否公平锁）
         lock = new ReentrantLock(fair);
+        // lock 绑定两个 Condition 条件
         notEmpty = lock.newCondition();
         notFull =  lock.newCondition();
     }
@@ -273,6 +283,8 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
      *         {@code c.size()}, or less than 1.
      * @throws NullPointerException if the specified collection or any
      *         of its elements are null
+     *
+     * 构造器 3：使用给定的容量，是否公平，及给定的集合初始化 ArrayBlockingQueue
      */
     public ArrayBlockingQueue(int capacity, boolean fair,
                               Collection<? extends E> c) {
