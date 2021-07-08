@@ -79,7 +79,11 @@ import java.util.Spliterator;
  * @author Doug Lea
  * @param <E> the type of elements held in this collection
  *
- * ArrayBlockingQueue的内部是由数组实现的
+ * ArrayBlockingQueue的内部是给予数组的阻塞队列实现的，它在初始化时需要指定容量；
+ * 内部使用了ReentrantLock保证线程安全；
+ * 常用方法：
+ *           1.入队：add，offer，put
+ *           2.出队：     poll，take，peek
  */
 public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         implements BlockingQueue<E>, java.io.Serializable {
@@ -116,12 +120,15 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
      */
 
     /** Main lock guarding all access */
+    //  使用 ReentrantLock 保证线程安全
     final ReentrantLock lock;
 
     /** Condition for waiting takes */
+    // 等待take操作（消费）的条件
     private final Condition notEmpty;
 
     /** Condition for waiting puts */
+    // 等待put操作（生产）的条件
     private final Condition notFull;
 
     /**
@@ -142,6 +149,8 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
 
     /**
      * Returns item at index i.
+     *
+     * 返回数组中指定位置的元素
      */
     @SuppressWarnings("unchecked")
     final E itemAt(int i) {
@@ -161,12 +170,15 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
     /**
      * Inserts element at current put position, advances, and signals.
      * Call only when holding lock.
+     *
+     * 入队操作
      */
     private void enqueue(E x) {
         // assert lock.getHoldCount() == 1;
         // assert items[putIndex] == null;
         final Object[] items = this.items;
         items[putIndex] = x;
+        // 若队列已满，则下标置为0
         if (++putIndex == items.length)
             putIndex = 0;
         count++;
@@ -176,19 +188,25 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
     /**
      * Extracts element at current take position, advances, and signals.
      * Call only when holding lock.
+     *
+     * 出队操作
      */
     private E dequeue() {
         // assert lock.getHoldCount() == 1;
         // assert items[takeIndex] != null;
         final Object[] items = this.items;
         @SuppressWarnings("unchecked")
+        // 获取takeIndex位置的元素
         E x = (E) items[takeIndex];
+        // 将该位置置空
         items[takeIndex] = null;
+        // 队列已经空了，take次数等于数组总数，表示队列为空，takeIndex置为0
         if (++takeIndex == items.length)
             takeIndex = 0;
         count--;
         if (itrs != null)
             itrs.elementDequeued();
+        // 队列已经不满（not full）了，可以继续生产
         notFull.signal();
         return x;
     }
@@ -331,8 +349,14 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
      * @return {@code true} (as specified by {@link Collection#add})
      * @throws IllegalStateException if this queue is full
      * @throws NullPointerException if the specified element is null
+     *
+     * 入队方法
+     *
+     * add(E)方法调用了父类AbstractQueue的add(E)方法，可以看到，实际上还是调用了offer(E)方法。
+     * 因此add(E)和offer(E)实现基本是一致的，
      */
     public boolean add(E e) {
+        // 调用父类AbstractQueue的add方法
         return super.add(e);
     }
 
@@ -344,15 +368,23 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
      * which can fail to insert an element only by throwing an exception.
      *
      * @throws NullPointerException if the specified element is null
+     *
+     * offer(E)方法时将一个元素入队：若队列已满则直接返回false，否则执行入队操作，
+     * 并唤醒notEmpty条件下等待的线程。
+     *
+     * 以“生产者-消费者”模型类比，执行offer(E)操作后表示队列已经有产品了（不为空，及notEmpty），
+     * 消费者可以消费了
      */
     public boolean offer(E e) {
         checkNotNull(e);
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
+            // 若队列已满，立即返回false
             if (count == items.length)
                 return false;
             else {
+                // 入队
                 enqueue(e);
                 return true;
             }
@@ -367,14 +399,20 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
      *
      * @throws InterruptedException {@inheritDoc}
      * @throws NullPointerException {@inheritDoc}
+     *
+     * put(E)也是将一个元素入队，若队列已满，则notFull条件下的线程等待
+     *
+     * 以“生产者-消费者”模型类比，就是容器已满，生产者等待；否则执行入队，并唤醒消费者
      */
     public void put(E e) throws InterruptedException {
         checkNotNull(e);
         final ReentrantLock lock = this.lock;
         lock.lockInterruptibly();
         try {
+            // 队列满的时候，notFull 条件等待
             while (count == items.length)
                 notFull.await();
+            // 入队
             enqueue(e);
         } finally {
             lock.unlock();
@@ -388,6 +426,8 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
      *
      * @throws InterruptedException {@inheritDoc}
      * @throws NullPointerException {@inheritDoc}
+     *
+     * offer(E, timeout, Unit)方法操作与offer(E)类似，只是多了超时等待
      */
     public boolean offer(E e, long timeout, TimeUnit unit)
         throws InterruptedException {
@@ -397,11 +437,13 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         final ReentrantLock lock = this.lock;
         lock.lockInterruptibly();
         try {
+            // 队列已满，则执行notFull等待一段时间
             while (count == items.length) {
                 if (nanos <= 0)
                     return false;
                 nanos = notFull.awaitNanos(nanos);
             }
+            // 等待时间已过，入队
             enqueue(e);
             return true;
         } finally {
@@ -409,10 +451,20 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         }
     }
 
+    /**
+     * 入队方法小结：
+     * 1.add(E)：入队成功返回true，否则抛出IllegalStateException 异常；
+     * 2.offer(E)：入队成功返回true，释放返回false;
+     * 3.offer(E, timeout, Unit): 同offer(E)，加了超时等待；
+     * 4.put(E)：无返回值，队列满的时候等待。
+     */
+
+    // 出队
     public E poll() {
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
+            // 队列为空时返回null, 否则将takeIndex位置元素出队
             return (count == 0) ? null : dequeue();
         } finally {
             lock.unlock();
@@ -423,6 +475,7 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         final ReentrantLock lock = this.lock;
         lock.lockInterruptibly();
         try {
+            // 队列为空时等待
             while (count == 0)
                 notEmpty.await();
             return dequeue();
@@ -431,11 +484,13 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         }
     }
 
+    // 与poll()方法操作类似，只是多了超时等待
     public E poll(long timeout, TimeUnit unit) throws InterruptedException {
         long nanos = unit.toNanos(timeout);
         final ReentrantLock lock = this.lock;
         lock.lockInterruptibly();
         try {
+            // 队列为空时，执行notEmpty等待nanos秒
             while (count == 0) {
                 if (nanos <= 0)
                     return null;
@@ -447,15 +502,25 @@ public class ArrayBlockingQueue<E> extends AbstractQueue<E>
         }
     }
 
+    // peek()方法与前面几个出队操作不同，peek方法只会获取队列的头元素，而不会将其删除
     public E peek() {
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
+            // 返回数组中指定位置的元素
             return itemAt(takeIndex); // null when queue is empty
         } finally {
             lock.unlock();
         }
     }
+
+    /**
+     * 出队方法小结：
+     * 1.poll(): 获取队列头部元素，并将其移除，队列为空时返回null；
+     * 2.take()：获取队列头部元素，并将其移除，队列为空时阻塞等待；
+     * 3.poll(long, unit)：获取队列头部元素，并将其移除，队列为空时等待一段时间，若超时返回null
+     * 4.peek()：获取队列头部元素，但不移除该元素
+     */
 
     // this doc comment is overridden to remove the reference to collections
     // greater in size than Integer.MAX_VALUE
