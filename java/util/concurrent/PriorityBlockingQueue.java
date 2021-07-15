@@ -104,6 +104,12 @@ import java.util.function.Consumer;
  * @since 1.5
  * @author Doug Lea
  * @param <E> the type of elements held in this collection
+ *
+ * PriorityQueue意为优先队列，表示队列中的元素是有优先级的，也就是说元素之间是可比较的。
+ * 因此，插入队列的元素要实现Comparable接口或者Comparator接口。
+ *
+ * PriorityQueue没有实现BlockingQueue接口，并非阻塞队列。它在逻辑上使用【堆】（即完全二叉树）
+ * 结构实现，物理上基于【动态数组】存储
  */
 @SuppressWarnings("unchecked")
 public class PriorityBlockingQueue<E> extends AbstractQueue<E>
@@ -128,6 +134,8 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
 
     /**
      * Default array capacity.
+     *
+     * 数据的默认初始容量
      */
     private static final int DEFAULT_INITIAL_CAPACITY = 11;
 
@@ -136,6 +144,8 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
      * Some VMs reserve some header words in an array.
      * Attempts to allocate larger arrays may result in
      * OutOfMemoryError: Requested array size exceeds VM limit
+     *
+     * 最大的数组大小，Integer.MAX_VALUE减8
      */
     private static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
 
@@ -146,17 +156,23 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
      * natural ordering, if comparator is null: For each node n in the
      * heap and each descendant d of n, n <= d.  The element with the
      * lowest value is in queue[0], assuming the queue is nonempty.
+     *
+     * 内部数组，用于存储队列中的元素
      */
     private transient Object[] queue;
 
     /**
      * The number of elements in the priority queue.
+     *
+     * 队列中元素的个数
      */
     private transient int size;
 
     /**
      * The comparator, or null if priority queue uses elements'
      * natural ordering.
+     *
+     * 队列中元素的比较器
      */
     private transient Comparator<? super E> comparator;
 
@@ -186,6 +202,8 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
      * Creates a {@code PriorityBlockingQueue} with the default
      * initial capacity (11) that orders its elements according to
      * their {@linkplain Comparable natural ordering}.
+     *
+     * 构造器1：无参构造器（默认初始容量为11）
      */
     public PriorityBlockingQueue() {
         this(DEFAULT_INITIAL_CAPACITY, null);
@@ -199,6 +217,8 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
      * @param initialCapacity the initial capacity for this priority queue
      * @throws IllegalArgumentException if {@code initialCapacity} is less
      *         than 1
+     *
+     * 构造器2：指定容量的构造器
      */
     public PriorityBlockingQueue(int initialCapacity) {
         this(initialCapacity, null);
@@ -215,6 +235,8 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
      *         natural ordering} of the elements will be used.
      * @throws IllegalArgumentException if {@code initialCapacity} is less
      *         than 1
+     *
+     * 构造器3：指定容量和比较器的构造器
      */
     public PriorityBlockingQueue(int initialCapacity,
                                  Comparator<? super E> comparator) {
@@ -241,17 +263,21 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
      *         queue's ordering
      * @throws NullPointerException if the specified collection or any
      *         of its elements are null
+     *
+     * 构造器4：用给定集合初始化PriorityQueue对象
      */
     public PriorityBlockingQueue(Collection<? extends E> c) {
         this.lock = new ReentrantLock();
         this.notEmpty = lock.newCondition();
         boolean heapify = true; // true if not known to be in heap order
         boolean screen = true;  // true if must screen for nulls
+        // 如果集合是 SortedSet 类型
         if (c instanceof SortedSet<?>) {
             SortedSet<? extends E> ss = (SortedSet<? extends E>) c;
             this.comparator = (Comparator<? super E>) ss.comparator();
             heapify = false;
         }
+        // 如果集合是 PriorityQueue 类型
         else if (c instanceof PriorityBlockingQueue<?>) {
             PriorityBlockingQueue<? extends E> pq =
                 (PriorityBlockingQueue<? extends E>) c;
@@ -267,9 +293,11 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
             a = Arrays.copyOf(a, n, Object[].class);
         if (screen && (n == 1 || this.comparator != null)) {
             for (int i = 0; i < n; ++i)
+                // 确保集合中每个元素不能为空
                 if (a[i] == null)
                     throw new NullPointerException();
         }
+        // 初始化 queue 数组和 size
         this.queue = a;
         this.size = n;
         if (heapify)
@@ -384,25 +412,36 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
      * demoting x down the tree repeatedly until it is less than or
      * equal to its children or is a leaf.
      *
-     * @param k the position to fill
-     * @param x the item to insert
-     * @param array the heap array
-     * @param n heap size
+     * @param k the position to fill 给定的索引值
+     * @param x the item to insert 数组的索引下标 k 所在的值
+     * @param array the heap array 数组
+     * @param n heap size 数组大小
+     *
+     * 此方法与 siftDownUsingComparator 方法实现逻辑完全一样，
+     * 不同的的地方仅在于该方法是针对 Comparable 接口，而后者针对 Comparator 接口
      */
     private static <T> void siftDownComparable(int k, T x, Object[] array,
                                                int n) {
         if (n > 0) {
             Comparable<? super T> key = (Comparable<? super T>)x;
+            // n为数组大小，数组的中间位置
             int half = n >>> 1;           // loop while a non-leaf
             while (k < half) {
+                // 获取索引为 k 的节点的左子节点索引child
                 int child = (k << 1) + 1; // assume left child is least
+                // 获取 child 的值
                 Object c = array[child];
+                // 获取索引为 k 的节点的右子节点索引right
                 int right = child + 1;
+                // 使用c自身的comparable比较，与siftDownUsingComparator方法不同的是，它使用重写的Comparator
                 if (right < n &&
                     ((Comparable<? super T>) c).compareTo((T) array[right]) > 0)
+                    // 取左右子节点中较小的一个
                     c = array[child = right];
+                // 给定的元素 x的比较器 与较小的子节点的值比较
                 if (key.compareTo((T) c) <= 0)
                     break;
+                // 将该节点与子节点互换
                 array[k] = c;
                 k = child;
             }
@@ -410,19 +449,39 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
         }
     }
 
+    /**
+     *
+     * @param k 给定的索引值
+     * @param x 数组的索引下标k所在的值
+     * @param array 数组
+     * @param n 数组大小
+     * @param cmp 比较器
+     *
+     * 该方法的步骤大概：
+     * 1. 找出给定节点（父节点）的子节点中较小的一个，并与之比较大小；
+     * 2. 若父节点较大，则交换位置（父节点“下沉”）
+     */
     private static <T> void siftDownUsingComparator(int k, T x, Object[] array,
                                                     int n,
                                                     Comparator<? super T> cmp) {
         if (n > 0) {
+            // n为数组大小，数组的中间位置
             int half = n >>> 1;
             while (k < half) {
+                // 获取索引为 k 的节点的左子节点索引child
                 int child = (k << 1) + 1;
+                // 获取 child 的值
                 Object c = array[child];
+                // 获取索引为 k 的节点的右子节点索引right
                 int right = child + 1;
+                // 左子节点的值大于右子节点，则二者换位置
                 if (right < n && cmp.compare((T) c, (T) array[right]) > 0)
+                    // 取左右子节点中较小的一个
                     c = array[child = right];
+                // 给定的元素 x 与较小的子节点的值比较
                 if (cmp.compare(x, (T) c) <= 0)
                     break;
+                // 将该节点与子节点互换
                 array[k] = c;
                 k = child;
             }
@@ -433,16 +492,24 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
     /**
      * Establishes the heap invariant (described above) in the entire tree,
      * assuming nothing about the order of the elements prior to the call.
+     *
+     * 堆化，即将数组元素转为堆的存储结构
+     *
+     * PS:这里遍历时，从数组的中间位置遍历（根据堆的存储结构，如果某个节点的索引为i，
+     * 则其左右子节点的索引分别为 2 * i + 1, 2 * i + 2）
      */
     private void heapify() {
         Object[] array = queue;
         int n = size;
+        // 从数组的中间位置开始遍历即可
         int half = (n >>> 1) - 1;
         Comparator<? super E> cmp = comparator;
+        // 根据 comparator 是否为空采用不同的方法
         if (cmp == null) {
             for (int i = half; i >= 0; i--)
                 siftDownComparable(i, (E) array[i], array, n);
         }
+        // comparator 不为空
         else {
             for (int i = half; i >= 0; i--)
                 siftDownUsingComparator(i, (E) array[i], array, n, cmp);
