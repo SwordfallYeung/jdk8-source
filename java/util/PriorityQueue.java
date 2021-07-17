@@ -83,7 +83,105 @@ import java.util.function.Consumer;
  * 因此，插入队列的元素要实现Comparable接口或者Comparator接口。
  *
  * PriorityQueue没有实现BlockingQueue接口，并非阻塞队列。它在逻辑上使用【堆】（即完全二叉树）结构实现，
- * 物理上基于【动态数组】存储。
+ * 物理上基于【动态数组】存储，如图所示：
+ *
+ *                  1
+ *                /  \
+ *      堆结构：   3    2
+ *              / \  / \
+ *             5  4 6
+ *  数组存储结构：
+ *             —————————————--
+ *             |1|3|2|5|4|6|..
+ *             —————————————--
+ *
+ * 示例代码一：
+ *  private static void test(){
+ *      // 不指定比较器（默认从小到大排序）
+ *      Queue<Integer> queue = new PriorityQueue<>();
+ *      for(int i = 0; i< 10; i++){
+ *           queue.add(random.nextInt(100));
+ *      }
+ *      while(!queue.isEmpty()){
+ *          System.out.print(queue.poll() + ".");
+ *      }
+ *  }
+ *
+ *  输出结果（仅供参考）：
+ *      2,13,14,36,39,40,43,55,83,88
+ *
+ * 示例二：指定比较器（Comparator）
+ *  private static void test(){
+ *      // 指定比较器（从大到小排序）
+ *      Queue<Integer> queue = new PriorityQueue<>(11, (o1, o2) -> o2 - o1);
+ *      for(int i = 0; i< 10; i++){
+ *           queue.add(random.nextInt(100));
+ *      }
+ *      while(!queue.isEmpty()){
+ *          System.out.print(queue.poll() + ".");
+ *      }
+ *  }
+ *  输出结果（仅供参考）：
+ *      76,74,71,69,52,49,41,41,35,1
+ *
+ * 示例三：求Top N
+ *  public class FixedPriorityQueue{
+ *      private PriorityQueue<Integer> queue;
+ *      private int maxSize;
+ *
+ *      public FixedPriorityQueue(int maxSize){
+ *           this.maxSize = maxSize;
+ *           // 初始化优先队列及比较器
+ *           // 这里是从大到小（可调整）
+ *           this.queue = new PriorityQueue<>(maxSize, (o2, o1) -> o2.compareTo(o1));
+ *      }
+ *
+ *      public void add(Integer i){
+ *           // 队列未满时，直接插入
+ *           if(queue.size() < maxSize){
+ *              queue.add(i);
+ *           }else{
+ *              // 队列已满，将待插入元素与最小值比较
+ *              Integer peek = queue.peek();
+ *              if(i.compareTo(peek) > 0){
+ *                 // 大于最小值，将最小值移除，该元素插入
+ *                queue.poll();
+ *                queue.add(i);
+ *              }
+ *           }
+ *      }
+ *
+ * public static void main(String[] args) {
+ *     FixedPriorityQueue fixedQueue = new FixedPriorityQueue(10);
+ *     for (int i = 1; i <= 100; i++) {
+ *       fixedQueue.add(i);
+ *     }
+ *
+ *     Iterable<Integer> iterable = () -> fixedQueue.queue.iterator();
+ *     System.out.println("队列中的元素：");
+ *     for (Integer integer : iterable) {
+ *       System.out.print(integer + ", ");
+ *     }
+ *
+ *     System.out.println();
+ *     System.out.println("最大的 10 个：");
+ *     while (!fixedQueue.queue.isEmpty()) {
+ *       System.out.print(fixedQueue.queue.poll() + ", ");
+ *     }
+ *   }
+ *  }
+ *
+ *  输出结果：
+ *      队列中的元素：
+ *      91, 92, 94, 93, 96, 95, 99, 97, 98, 100,
+ *      最大的 10 个：
+ *      91, 92, 93, 94, 95, 96, 97, 98, 99, 100,
+ *
+ * 小结：
+ * 1. PriorityQueue为优先队列，实现了Queue接口，但并非阻塞队列；
+ * 2. 内部的元素是可比较的（Comparable或Comparator），元素不能为空；
+ * 3. 逻辑上使用【堆】（即完全二叉树）结构实现，物理上基于【动态数组】存储；
+ * 4. PriorityQueue可用作求解Top N问题。
  */
 public class PriorityQueue<E> extends AbstractQueue<E>
     implements java.io.Serializable {
@@ -243,6 +341,8 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      *         ordering
      * @throws NullPointerException if the specified priority queue or any
      *         of its elements are null
+     *
+     * 构造器6：用给定的 PriorityQueue 初始化一个PriorityQueue
      */
     @SuppressWarnings("unchecked")
     public PriorityQueue(PriorityQueue<? extends E> c) {
@@ -262,6 +362,8 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      *         sorted set's ordering
      * @throws NullPointerException if the specified sorted set or any
      *         of its elements are null
+     *
+     * 构造器7：用给定的 SortedSet 初始化 PriorityQueue
      */
     @SuppressWarnings("unchecked")
     public PriorityQueue(SortedSet<? extends E> c) {
@@ -270,7 +372,9 @@ public class PriorityQueue<E> extends AbstractQueue<E>
     }
 
     private void initFromPriorityQueue(PriorityQueue<? extends E> c) {
+        // PriorityQueue，则调用initFromCollection方法转换为Object[]
         if (c.getClass() == PriorityQueue.class) {
+            // 若给定的时 PriorityQueue，则直接进行初始化
             this.queue = c.toArray();
             this.size = c.size();
         } else {
@@ -280,7 +384,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
 
     // 集合是 SortedSet 类型 使用给定集合的元素初始化 PriorityQueue
     private void initElementsFromCollection(Collection<? extends E> c) {
-        // 转为数组
+        // 把集合转为数组
         Object[] a = c.toArray();
         // If c.toArray incorrectly doesn't return Object[], copy it.
         // 如果集合c的类型不是Object，则使用Arrays.copyOf转换为Object[]
@@ -292,6 +396,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
             for (int i = 0; i < len; i++)
                 if (a[i] == null)
                     throw new NullPointerException();
+        // 初始化 queue 数组和 size
         this.queue = a;
         this.size = a.length;
     }
@@ -302,7 +407,9 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      * @param c the collection
      */
     private void initFromCollection(Collection<? extends E> c) {
+        // 将集合中的元素转为数组，并赋值给 queue（上面已分析）
         initElementsFromCollection(c);
+        // 堆化
         heapify();
     }
 
@@ -320,17 +427,23 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      * @param minCapacity the desired minimum capacity
      */
     private void grow(int minCapacity) {
+        // 原先容量
         int oldCapacity = queue.length;
         // Double size if small; else grow by 50%
+        // 原容量较小时，扩大为原先的两倍；否则扩大为原先的1.5倍
         int newCapacity = oldCapacity + ((oldCapacity < 64) ?
                                          (oldCapacity + 2) :
                                          (oldCapacity >> 1));
         // overflow-conscious code
         if (newCapacity - MAX_ARRAY_SIZE > 0)
             newCapacity = hugeCapacity(minCapacity);
+        // 创建一个新的数组
         queue = Arrays.copyOf(queue, newCapacity);
     }
 
+    /**
+     * PS: 扩容操作与前文分析的 ArrayList 和 Vector 的扩容操作类似。
+     */
     private static int hugeCapacity(int minCapacity) {
         if (minCapacity < 0) // overflow
             throw new OutOfMemoryError();
@@ -347,6 +460,8 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      *         compared with elements currently in this priority queue
      *         according to the priority queue's ordering
      * @throws NullPointerException if the specified element is null
+     *
+     * 入队操作 实际是调用 offer 方法实现的
      */
     public boolean add(E e) {
         return offer(e);
@@ -366,12 +481,16 @@ public class PriorityQueue<E> extends AbstractQueue<E>
             throw new NullPointerException();
         modCount++;
         int i = size;
+        // 如果size大于队列的长度，则扩容
         if (i >= queue.length)
             grow(i + 1);
+        // 元素个数加一
         size = i + 1;
+        // 原数组为空，即添加第一个元素，直接放到数组首位即可
         if (i == 0)
             queue[0] = e;
         else
+            // 向上筛选
             siftUp(i, e);
         return true;
     }
@@ -381,6 +500,7 @@ public class PriorityQueue<E> extends AbstractQueue<E>
         return (size == 0) ? null : (E) queue[0];
     }
 
+    // 遍历数组查找指定元素的索引下标
     private int indexOf(Object o) {
         if (o != null) {
             for (int i = 0; i < size; i++)
@@ -400,8 +520,11 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      *
      * @param o element to be removed from this queue, if present
      * @return {@code true} if this queue changed as a result of the call
+     *
+     * 删除操作
      */
     public boolean remove(Object o) {
+        // 找到需要移除的数组下标索引值
         int i = indexOf(o);
         if (i == -1)
             return false;
@@ -613,16 +736,41 @@ public class PriorityQueue<E> extends AbstractQueue<E>
         size = 0;
     }
 
+    /**
+     *  删除元素2前                 删除元素2后
+     *       2               |        4
+     *     /   \             |      /   \
+     *    6     4            |      6     12
+     *   / \   / \           |     / \
+     *  10  8 12             |   10  8
+     *                       |
+     *  ——————————————---    |   ——————————————---
+     *  |2|6|4|10|8|12|..|    |   |4|6|12|10|8|..|
+     *  ——————————————---    |   ——————————————---
+     *
+     * 该操作的步骤大概如下：
+     * 1. 移除队列的最后一个元素，并将该元素置于首位；
+     * 2. 将新的“首位”元素与子节点中较小的一个比较，比较并交换位置（即执行“下沉（siftDown）”操作）。
+     *
+     * 出队操作：poll
+     * @return
+     */
     @SuppressWarnings("unchecked")
     public E poll() {
+        // 队列为空时，返回null
         if (size == 0)
             return null;
+        // 队列大小减一
         int s = --size;
         modCount++;
+        // 队列第一个元素
         E result = (E) queue[0];
+        // 队列最后一个元素
         E x = (E) queue[s];
+        // 把最后一个元素置空
         queue[s] = null;
         if (s != 0)
+            // 下沉，这里是把最后一个元素x放置在索引为0的数组位置上
             siftDown(0, x);
         return result;
     }
@@ -638,18 +786,29 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      * that was previously at the end of the list and is now at some
      * position before i. This fact is used by iterator.remove so as to
      * avoid missing traversing elements.
+     *
+     * 大概执行步骤：
+     * 1. 若移除末尾元素，直接删除；
+     * 2. 若非末尾元素，则将末尾元素删除，并用末尾元素替换待删除的元素；
+     * 3. 堆化操作：先执行“下沉（siftDown）”操作，若该元素未“下沉”，则再执行“上浮（siftUp）”操作，
+     *    使得数组删除元素后仍满足堆结构。
      */
     @SuppressWarnings("unchecked")
     private E removeAt(int i) {
         // assert i >= 0 && i < size;
         modCount++;
         int s = --size;
+        // 移除末尾元素，直接置空
         if (s == i) // removed last element
             queue[i] = null;
         else {
+            // 末尾元素
             E moved = (E) queue[s];
+            // 删除末尾元素
             queue[s] = null;
+            // 操作与poll 方法类似
             siftDown(i, moved);
+            // 这里表示该节点未进行“下沉”调整，则执行“上浮”操作
             if (queue[i] == moved) {
                 siftUp(i, moved);
                 if (queue[i] != moved)
@@ -670,6 +829,10 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      *
      * @param k the position to fill
      * @param x the item to insert
+     *
+     * 这里简单比较下siftDown和siftUp这两个方法：
+     *  1. siftDown是把指定节点与其子节点中较小的一个比较，父节点较大时“下沉（down）”;
+     *  2. siftUp是把指定节点与其父节点比较，若小于父节点，则“上浮（up）”。
      */
     private void siftUp(int k, E x) {
         if (comparator != null)
@@ -678,30 +841,67 @@ public class PriorityQueue<E> extends AbstractQueue<E>
             siftUpComparable(k, x);
     }
 
+    /**
+     * 该方法逻辑与siftUpUsingComparator一样也是Comparator和Comparable接口的差别
+     * @param k
+     * @param x
+     */
     @SuppressWarnings("unchecked")
     private void siftUpComparable(int k, E x) {
         Comparable<? super E> key = (Comparable<? super E>) x;
+        // 不断循环，直到k小于0，循环的过程，k一直(k-1)/2，然后再把该值k=(k-1)/2
         while (k > 0) {
+            // 父节点的索引 (k - 1）/ 2
             int parent = (k - 1) >>> 1;
+            // 父节点的元素
             Object e = queue[parent];
+            // 若该节点元素大于等于父节点，结束循环
             if (key.compareTo((E) e) >= 0)
                 break;
+            // 该节点元素小于父节点，则和父节点交换位置
             queue[k] = e;
             k = parent;
         }
+        // 实际为queue[parent] = x
         queue[k] = key;
     }
 
+
+    /**
+     *       2               |        2                            2                    1
+     *     /   \             |      /   \                        /   \                /   \
+     *    6     4            |      6     4            ——>      6     1     ——>      6     2
+     *   / \   / \           |     / \   / \                   / \   / \            / \   / \
+     *  10  8 12  7(插入元素)  |   10  8  12  1（插入元素）       10  8  12  4        10  8  12  4
+     *                       |
+     *  ——————————————---    |   ——————————————---        ————————————————        ————————————————
+     *  |2|6|4|10|8|12|7|    |   |2|6|4|10|8|12|1|    ——> |2|6|1|10|8|12|4|   ——> |1|6|2|10|8|12|4|
+     *  ——————————————---    |   ——————————————---        ————————————————        ————————————————
+     *
+     *  其中分为左右两种情况：
+     *  1. 左边插入元素为7，大于父节点4，无需和父节点交换位置，直接插入即可；
+     *  2. 右边插入元素为1，小于父节点4，需要和父节点交换位置，并一直往上查找和交换，上图为渐变的数组和对应的树结构
+     *
+     * @param k 索引
+     * @param x 索引下标对应的数组值
+     */
+
     @SuppressWarnings("unchecked")
     private void siftUpUsingComparator(int k, E x) {
+        // 不断循环，直到k小于0，循环的过程，k一直(k-1)/2，然后再把该值k=(k-1)/2
         while (k > 0) {
+            // 父节点的索引 (k - 1）/ 2
             int parent = (k - 1) >>> 1;
+            // 父节点的元素
             Object e = queue[parent];
+            // 若该节点元素大于等于父节点，结束循环
             if (comparator.compare(x, (E) e) >= 0)
                 break;
+            // 该节点元素小于父节点，则和父节点交换位置
             queue[k] = e;
             k = parent;
         }
+        // 实际为queue[parent] = x
         queue[k] = x;
     }
 
@@ -710,59 +910,106 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      * demoting x down the tree repeatedly until it is less than or
      * equal to its children or is a leaf.
      *
-     * @param k the position to fill
-     * @param x the item to insert
+     * @param k the position to fill 要填充的索引值
+     * @param x the item to insert   索引值下标对应的数组值
+     *
+     * 向下筛选？暂未找到恰当的译法，但这不是重点，该方法的作用就是使数组满足堆结构
+     * （其思想与冒泡排序有些类似）
      */
     private void siftDown(int k, E x) {
+        // 根据 comparator 是否为空采用不同的方法
         if (comparator != null)
             siftDownUsingComparator(k, x);
         else
             siftDownComparable(k, x);
     }
 
+    /**
+     * 此方法与siftDownUsingComparator方法实现逻辑完全一样，不同的地方仅
+     * 在于该方法是针对Comparable接口，而后者针对Comparator接口
+     * @param k
+     * @param x
+     */
     @SuppressWarnings("unchecked")
     private void siftDownComparable(int k, E x) {
         Comparable<? super E> key = (Comparable<? super E>)x;
+        // 数组的中间位置
         int half = size >>> 1;        // loop while a non-leaf
         while (k < half) {
+            // 获取索引为 k 的节点的左子节点索引child
             int child = (k << 1) + 1; // assume left child is least
+            // 获取child的值
             Object c = queue[child];
+            // 获取索引为k的节点的右子节点索引
             int right = child + 1;
+            // 左子节点的值大于右子节点，则二者换位置
             if (right < size &&
                 ((Comparable<? super E>) c).compareTo((E) queue[right]) > 0)
+                // 取左右子节点中较小的一个，child的索引变换为right，c也切换成右子节点的值
                 c = queue[child = right];
+            // 左子节点的值小于右子节点，则不需要换位置
+            // c还是左子节点的值，child为左子节点索引
+            // 给定的元素 x 与较小的子节点的值比较
             if (key.compareTo((E) c) <= 0)
                 break;
+            // 将该节点与子节点互换，将较小节点c赋给queue[k]，
             queue[k] = c;
+            // 较小节点c赋值给父节点x的索引k所在位置之后，切换k为较小节点c原先的索引
             k = child;
         }
+        // 这里实际是queue[child]=x
         queue[k] = key;
     }
 
+    /**
+     * 该方法的步骤大概：
+     * 1. 找出给定节点（父节点）的子节点中较小的一个，并与之比较大小；
+     * 2. 若父节点较大，则交换位置（父节点“下沉”）
+     * @param k 索引
+     * @param x 索引下标代表的数组值
+     */
     @SuppressWarnings("unchecked")
     private void siftDownUsingComparator(int k, E x) {
+        // 数组的中间位置
         int half = size >>> 1;
         while (k < half) {
+            // 获取索引为 k 的节点的左子节点索引child
             int child = (k << 1) + 1;
+            // 获取child的值
             Object c = queue[child];
+            // 获取索引为k的节点的右子节点索引
             int right = child + 1;
+            // 左子节点的值大于右子节点，则二者换位置
             if (right < size &&
                 comparator.compare((E) c, (E) queue[right]) > 0)
+                // 取左右子节点中较小的一个，child的索引变换为right，c也切换成右子节点的值
                 c = queue[child = right];
+            // 左子节点的值小于右子节点，则不需要换位置
+            // c还是左子节点的值，child为左子节点索引
+            // 给定的元素 x 与较小的子节点的值比较
             if (comparator.compare(x, (E) c) <= 0)
                 break;
+            // 将该节点与子节点互换，将较小节点c赋给queue[k]，
             queue[k] = c;
+            // 较小节点c赋值给父节点x的索引k所在位置之后，切换k为较小节点c原先的索引
             k = child;
         }
+        // 这里实际是queue[child]=x
         queue[k] = x;
     }
 
     /**
      * Establishes the heap invariant (described above) in the entire tree,
      * assuming nothing about the order of the elements prior to the call.
+     *
+     * 堆化，即将数组元素转为堆的存储结构
+     *
+     * PS：这里遍历时，从数组的中间位置遍历（根据堆的存储结构，如果某个节点的索引为i，
+     * 则其左右子节点的索引分别为2 * i + 1, 2 * i + 2）
      */
     @SuppressWarnings("unchecked")
     private void heapify() {
+        // 从数组的中间位置开始for遍历即可
         for (int i = (size >>> 1) - 1; i >= 0; i--)
             siftDown(i, (E) queue[i]);
     }
