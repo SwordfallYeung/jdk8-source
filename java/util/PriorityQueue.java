@@ -78,12 +78,19 @@ import java.util.function.Consumer;
  * @since 1.5
  * @author Josh Bloch, Doug Lea
  * @param <E> the type of elements held in this collection
+ *
+ * PriorityQueue意为优先队列，表示队列中的元素是有优先级的，也就是说元素之间是可比较的。
+ * 因此，插入队列的元素要实现Comparable接口或者Comparator接口。
+ *
+ * PriorityQueue没有实现BlockingQueue接口，并非阻塞队列。它在逻辑上使用【堆】（即完全二叉树）结构实现，
+ * 物理上基于【动态数组】存储。
  */
 public class PriorityQueue<E> extends AbstractQueue<E>
     implements java.io.Serializable {
 
     private static final long serialVersionUID = -7720805057305804111L;
 
+    // 数据的默认初始容量
     private static final int DEFAULT_INITIAL_CAPACITY = 11;
 
     /**
@@ -93,23 +100,31 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      * natural ordering, if comparator is null: For each node n in the
      * heap and each descendant d of n, n <= d.  The element with the
      * lowest value is in queue[0], assuming the queue is nonempty.
+     *
+     * 内部数组，用于存储队列中的元素
      */
     transient Object[] queue; // non-private to simplify nested class access
 
     /**
      * The number of elements in the priority queue.
+     *
+     * 队列中元素的个数
      */
     private int size = 0;
 
     /**
      * The comparator, or null if priority queue uses elements'
      * natural ordering.
+     *
+     * 队列中元素的比较器
      */
     private final Comparator<? super E> comparator;
 
     /**
      * The number of times this priority queue has been
      * <i>structurally modified</i>.  See AbstractList for gory details.
+     *
+     * 结构性修改次数
      */
     transient int modCount = 0; // non-private to simplify nested class access
 
@@ -117,6 +132,8 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      * Creates a {@code PriorityQueue} with the default initial
      * capacity (11) that orders its elements according to their
      * {@linkplain Comparable natural ordering}.
+     *
+     * 构造器1：无参构造器（默认初始容量为11）
      */
     public PriorityQueue() {
         this(DEFAULT_INITIAL_CAPACITY, null);
@@ -130,6 +147,8 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      * @param initialCapacity the initial capacity for this priority queue
      * @throws IllegalArgumentException if {@code initialCapacity} is less
      *         than 1
+     *
+     * 构造器2：指定容量的构造器
      */
     public PriorityQueue(int initialCapacity) {
         this(initialCapacity, null);
@@ -143,6 +162,8 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      *         priority queue.  If {@code null}, the {@linkplain Comparable
      *         natural ordering} of the elements will be used.
      * @since 1.8
+     *
+     * 构造器3：指定比较器的构造器
      */
     public PriorityQueue(Comparator<? super E> comparator) {
         this(DEFAULT_INITIAL_CAPACITY, comparator);
@@ -158,6 +179,8 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      *         natural ordering} of the elements will be used.
      * @throws IllegalArgumentException if {@code initialCapacity} is
      *         less than 1
+     *
+     * 构造器3：指定初始容量和比较器的构造器
      */
     public PriorityQueue(int initialCapacity,
                          Comparator<? super E> comparator) {
@@ -184,14 +207,18 @@ public class PriorityQueue<E> extends AbstractQueue<E>
      *         queue's ordering
      * @throws NullPointerException if the specified collection or any
      *         of its elements are null
+     *
+     * 构造器4：用给定集合初始化PriorityQueue对象
      */
     @SuppressWarnings("unchecked")
     public PriorityQueue(Collection<? extends E> c) {
+        // 如果集合是 SortedSet 类型
         if (c instanceof SortedSet<?>) {
             SortedSet<? extends E> ss = (SortedSet<? extends E>) c;
             this.comparator = (Comparator<? super E>) ss.comparator();
             initElementsFromCollection(ss);
         }
+        // 如果集合是 PriorityQueue 类型
         else if (c instanceof PriorityQueue<?>) {
             PriorityQueue<? extends E> pq = (PriorityQueue<? extends E>) c;
             this.comparator = (Comparator<? super E>) pq.comparator();
@@ -251,13 +278,17 @@ public class PriorityQueue<E> extends AbstractQueue<E>
         }
     }
 
+    // 集合是 SortedSet 类型 使用给定集合的元素初始化 PriorityQueue
     private void initElementsFromCollection(Collection<? extends E> c) {
+        // 转为数组
         Object[] a = c.toArray();
         // If c.toArray incorrectly doesn't return Object[], copy it.
+        // 如果集合c的类型不是Object，则使用Arrays.copyOf转换为Object[]
         if (a.getClass() != Object[].class)
             a = Arrays.copyOf(a, a.length, Object[].class);
         int len = a.length;
         if (len == 1 || this.comparator != null)
+            // 确保集合中每个元素不能为空
             for (int i = 0; i < len; i++)
                 if (a[i] == null)
                     throw new NullPointerException();
