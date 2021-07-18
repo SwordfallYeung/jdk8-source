@@ -87,6 +87,19 @@ import java.util.function.UnaryOperator;
  * @since 1.5
  * @author Doug Lea
  * @param <E> the type of elements held in this collection
+ *
+ * CopyOnWriteArrayList，从名字可以看出它跟ArrayList有点关系，
+ * 可以理解为线程安全的ArrayList
+ *
+ * 它主要实现了List接口，也是一个集合类。
+ *
+ * CopyOnWriteArrayList是一个集合类，它的主要特点如下：
+ * 1. CopyOnWriteArrayList可以理解为一个线程安全的ArrayList;
+ * 2. 在“增删改”操作中使用互斥锁保证线程安全，读操作不加锁；
+ * 3. 采用写入时复制（Copy-On-Write）的思想，读写分离，可能造成脏读；
+ * 4. 适用于读多写少的场景。
+ *
+ * 它也有一个明星的缺点：当集合中数据量较大时，如果做一些修改操作比较耗费内存（内存中同时存在两份数据）。
  */
 public class CopyOnWriteArrayList<E>
     implements List<E>, RandomAccess, Cloneable, java.io.Serializable {
@@ -96,6 +109,9 @@ public class CopyOnWriteArrayList<E>
     final transient ReentrantLock lock = new ReentrantLock();
 
     /** The array, accessed only via getArray/setArray. */
+    // 存储元素的数组
+    // 这个Object数组就是CopyOnWriteArrayList用于存储数据的，而这几个构造器主要就是对
+    // 该数组进行初始化。
     private transient volatile Object[] array;
 
     /**
@@ -114,7 +130,13 @@ public class CopyOnWriteArrayList<E>
     }
 
     /**
+     * 构造函数都调用了setArray方法
+     */
+
+    /**
      * Creates an empty list.
+     *
+     * 构造器一：无参构造器
      */
     public CopyOnWriteArrayList() {
         setArray(new Object[0]);
@@ -127,6 +149,8 @@ public class CopyOnWriteArrayList<E>
      *
      * @param c the collection of initially held elements
      * @throws NullPointerException if the specified collection is null
+     *
+     * 构造器二：入参为集合类型
      */
     public CopyOnWriteArrayList(Collection<? extends E> c) {
         Object[] elements;
@@ -147,6 +171,8 @@ public class CopyOnWriteArrayList<E>
      * @param toCopyIn the array (a copy of this array is used as the
      *        internal array)
      * @throws NullPointerException if the specified array is null
+     *
+     * 构造器三：入参为数组
      */
     public CopyOnWriteArrayList(E[] toCopyIn) {
         setArray(Arrays.copyOf(toCopyIn, toCopyIn.length, Object[].class));
@@ -391,30 +417,50 @@ public class CopyOnWriteArrayList<E>
      * {@inheritDoc}
      *
      * @throws IndexOutOfBoundsException {@inheritDoc}
+     *
+     * 获取给定位置的元素
      */
     public E get(int index) {
         return get(getArray(), index);
     }
 
     /**
+     * 增删改查操作：
+     * 1. 增删改查操作都使用了互斥锁，读操作不加锁；
+     * 2. 增删改操作都会把当前数组复制一份副本出来，在副本上做修改，然后再覆盖原数组；
+     * 3. 修改过程中仍可以读取，但读取到的可能是旧数组（脏读）。
+     *
+     * 这是一种读写分离的思想，可以提高并发性能（读多写少的场景下）。
+     */
+
+    /**
      * Replaces the element at the specified position in this list with the
      * specified element.
      *
      * @throws IndexOutOfBoundsException {@inheritDoc}
+     *
+     * 将指定位置的元素设置为给定的元素
+     *
+     * 该方法与增加删除操作也是类似的
      */
     public E set(int index, E element) {
+        // 获取锁
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
+            // 获取原数组
             Object[] elements = getArray();
+            // 获取该位置的旧值
             E oldValue = get(elements, index);
 
+            // 新旧值不同
             if (oldValue != element) {
                 int len = elements.length;
                 Object[] newElements = Arrays.copyOf(elements, len);
                 newElements[index] = element;
                 setArray(newElements);
             } else {
+                // 新旧值相同
                 // Not quite a no-op; ensures volatile write semantics
                 setArray(elements);
             }
@@ -429,15 +475,21 @@ public class CopyOnWriteArrayList<E>
      *
      * @param e element to be appended to this list
      * @return {@code true} (as specified by {@link Collection#add})
+     *
+     * 将指定元素添加到List末尾
      */
     public boolean add(E e) {
+        // 获取锁
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
+            // 获取原数组
             Object[] elements = getArray();
             int len = elements.length;
+            // 将原数据复制一个新的数组，容量增加1
             Object[] newElements = Arrays.copyOf(elements, len + 1);
             newElements[len] = e;
+            // 用新的数组替换旧的数组
             setArray(newElements);
             return true;
         } finally {
@@ -451,11 +503,15 @@ public class CopyOnWriteArrayList<E>
      * any subsequent elements to the right (adds one to their indices).
      *
      * @throws IndexOutOfBoundsException {@inheritDoc}
+     *
+     * 将给定元素添加到指定位置
      */
     public void add(int index, E element) {
+        // 获取锁
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
+            // 获取原数组
             Object[] elements = getArray();
             int len = elements.length;
             if (index > len || index < 0)
@@ -463,14 +519,20 @@ public class CopyOnWriteArrayList<E>
                                                     ", Size: "+len);
             Object[] newElements;
             int numMoved = len - index;
+            // 若将新元素添加到末尾，直接复制一个新的数组（容量增加1）
             if (numMoved == 0)
                 newElements = Arrays.copyOf(elements, len + 1);
+            // 否则，创建一个新的空数组（容量增加1）
+            // 然后先把index前面的数据复制到新数组，再把index后面的数据复制到新数组
             else {
                 newElements = new Object[len + 1];
+                // 先把index前面的数据复制到新数组
                 System.arraycopy(elements, 0, newElements, 0, index);
+                // 再把index后面的数据复制到新数组
                 System.arraycopy(elements, index, newElements, index + 1,
                                  numMoved);
             }
+            // 把新元素添加到新数组的末尾，然后替换原数组
             newElements[index] = element;
             setArray(newElements);
         } finally {
@@ -484,22 +546,31 @@ public class CopyOnWriteArrayList<E>
      * indices).  Returns the element that was removed from the list.
      *
      * @throws IndexOutOfBoundsException {@inheritDoc}
+     *
+     * 删除指定位置的元素
      */
     public E remove(int index) {
+        // 获取锁
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
+            // 获取原数组
             Object[] elements = getArray();
             int len = elements.length;
+            // 获取该索引的旧值
             E oldValue = get(elements, index);
             int numMoved = len - index - 1;
+            // 删除的是末尾元素
             if (numMoved == 0)
+                // 复制index前面的所有元素，并替换原数组
                 setArray(Arrays.copyOf(elements, len - 1));
             else {
+                // 删除的不是末尾元素，新建一个空数组（容量减1）
                 Object[] newElements = new Object[len - 1];
                 System.arraycopy(elements, 0, newElements, 0, index);
                 System.arraycopy(elements, index + 1, newElements, index,
                                  numMoved);
+                // 替换旧数组
                 setArray(newElements);
             }
             return oldValue;
@@ -520,9 +591,13 @@ public class CopyOnWriteArrayList<E>
      *
      * @param o element to be removed from this list, if present
      * @return {@code true} if this list contained the specified element
+     *
+     * 删除指定的元素
      */
     public boolean remove(Object o) {
+        // 获取原数组（快照）
         Object[] snapshot = getArray();
+        // 获取给定元素的索引，若小于零表示不存在，返回false
         int index = indexOf(o, snapshot, 0, snapshot.length);
         return (index < 0) ? false : remove(o, snapshot, index);
     }
@@ -532,9 +607,11 @@ public class CopyOnWriteArrayList<E>
      * recent snapshot contains o at the given index.
      */
     private boolean remove(Object o, Object[] snapshot, int index) {
+        // 获取锁
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
+            // 再次获取原数组（这里的操作逻辑和前面的addIfAbsent类似）
             Object[] current = getArray();
             int len = current.length;
             if (snapshot != current) findIndex: {
@@ -564,6 +641,14 @@ public class CopyOnWriteArrayList<E>
             lock.unlock();
         }
     }
+
+    /**
+     * 这两个方法的共同点：
+     *
+     * 1.使用互斥锁（ReentrantLock ）实现线程安全；
+     * 2.在删除元素时，也不是直接修改原数组，而是复制出来一个新的数组，
+     *   在新数组上修改，修改之后再覆盖原先的数组（与增加操作类似）。
+     */
 
     /**
      * Removes from this list all of the elements whose index is between
@@ -607,9 +692,13 @@ public class CopyOnWriteArrayList<E>
      *
      * @param e element to be added to this list, if absent
      * @return {@code true} if the element was added
+     *
+     * 当给定元素不存在时才添加
      */
     public boolean addIfAbsent(E e) {
+        // 获取原数组（当前的快照）
         Object[] snapshot = getArray();
+        // indexOf >= 0 表示该元素已存在
         return indexOf(e, snapshot, 0, snapshot.length) >= 0 ? false :
             addIfAbsent(e, snapshot);
     }
@@ -617,17 +706,30 @@ public class CopyOnWriteArrayList<E>
     /**
      * A version of addIfAbsent using the strong hint that given
      * recent snapshot does not contain e.
+     *
+     * 值得注意的是，addIfAbsent方法执行期间，可能存在其它线程对数组进行修改，
+     * 因此内部需要判断是否有修改。
+     *
+     * 这几个方法的共同点：
+     * 1. 都使用互斥锁（ReentrantLock）实现线程安全；
+     * 2. 在新增元素时，并非直接修改原数组，而是复制出一个新的数组，在新数组上修改，
+     *    修改之后再覆盖原先的数组（这名字 Copy-On-Wirte大概是这么来的吧）
      */
     private boolean addIfAbsent(E e, Object[] snapshot) {
+        // 获取锁
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
+            // 再次获取原数组
             Object[] current = getArray();
             int len = current.length;
+            // 二者不等，表示期间有其它线程进行修改
             if (snapshot != current) {
                 // Optimize for lost race to another addXXX operation
                 int common = Math.min(snapshot.length, len);
+                // 判断 e 是否存在于当前数组
                 for (int i = 0; i < common; i++)
+                    // e 存在于 current，则返回false（前面已判断snapshot中不存在）
                     if (current[i] != snapshot[i] && eq(e, current[i]))
                         return false;
                 if (indexOf(e, current, common, len) >= 0)
@@ -1073,6 +1175,7 @@ public class CopyOnWriteArrayList<E>
      * @return an iterator over the elements in this list in proper sequence
      */
     public Iterator<E> iterator() {
+        // 获取当前数组，作为快照传入COWIterator
         return new COWIterator<E>(getArray(), 0);
     }
 
@@ -1126,10 +1229,13 @@ public class CopyOnWriteArrayList<E>
             (getArray(), Spliterator.IMMUTABLE | Spliterator.ORDERED);
     }
 
+    // COWIterator 是一个内部嵌套类
     static final class COWIterator<E> implements ListIterator<E> {
         /** Snapshot of the array */
+        // 数组的快照
         private final Object[] snapshot;
         /** Index of element to be returned by subsequent call to next.  */
+        // 对next的后续调用将返回元素的索引
         private int cursor;
 
         private COWIterator(Object[] elements, int initialCursor) {
@@ -1171,6 +1277,8 @@ public class CopyOnWriteArrayList<E>
          * Not supported. Always throws UnsupportedOperationException.
          * @throws UnsupportedOperationException always; {@code remove}
          *         is not supported by this iterator.
+         *
+         * 该迭代器不支持修改操作
          */
         public void remove() {
             throw new UnsupportedOperationException();
@@ -1206,6 +1314,11 @@ public class CopyOnWriteArrayList<E>
             cursor = size;
         }
     }
+
+    /**
+     * 该迭代器会使用当前数组的一个快照进行迭代，在此期间若有其他线程对集合进行修改，
+     * 迭代器是读不到。而且不支持在迭代过程中对数组进行增加、删除、修改操作。
+     */
 
     /**
      * Returns a view of the portion of this list between
