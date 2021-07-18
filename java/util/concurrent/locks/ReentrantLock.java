@@ -107,6 +107,30 @@ import java.util.Collection;
  * 一个嵌套类Sync，而Sync又继承自AbstractQueuedSynchronizer（简称AQS）。而且，不仅ReentrantLock，
  * 其他一些并发工具类如CountdownLatch、CyclicBarrier等，其实现也都是基于AQS类。AQS可以理解为并发包
  * 中许多实现的基石。
+ *
+ * 在JDK1.5以前，锁的实现只能用synchronized关键字；1.5开始提供了ReentrantLock，它是API层面的锁。
+ *
+ * ReentrantLock用法和使用synchronized关键字效果是一样的。既然有了synchronized，为什么又会有Lock呢?
+ * 相比于synchronized，其实ReentrantLock的出现并不重复，它增加了不少功能，比如：
+ * 1. 公平锁 & 非公平锁
+ *   所谓锁是否公平，简单理解就是一系列线程获取到锁的顺序是否遵循【先来后到】。即，如果先申请锁的线程先获取到锁，
+ *   就是公平锁；否则就是非公平锁。ReentrantLock的默认实现和synchronized都是非公平锁。
+ * 2. 可重入锁
+ *    锁是否可重入，就是一个线程是否可以多次获取同一个锁，若是，就是可重入锁。ReentrantLock和synchronized都是可重入锁。
+ *
+ *    synchronized 与 ReentrantLock 比较：
+ * 相同点：二者都是互斥锁，可重入，默认都是非公平锁。
+ * 不同点：synchronized 是语法层面实现，自动获取锁和释放锁；
+ * ReentrantLock 是 API 层面实现，手动获取锁和释放锁。
+ *
+ * ReentrantLock 相比 synchronized 的优势：
+ * 1.可响应中断；
+ * 2获取锁可设置超时；
+ * 3.可实现公平锁；
+ * 4.可绑定多个条件（Condition）。
+ *
+ * PS: JDK 1.6 以后，synchronized 与 ReentrantLock 性能基本持平，
+ * JVM 未来的性能优化也会更偏向于原生的 synchronized。因此，如何选择还要根据实际需求，性能不再是不选择 synchronized 的原因了。
  */
 public class ReentrantLock implements Lock, java.io.Serializable {
     private static final long serialVersionUID = 7373984872572414699L;
@@ -117,6 +141,8 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      * Base of synchronization control for this lock. Subclassed
      * into fair and nonfair versions below. Uses AQS state to
      * represent the number of holds on the lock.
+     *
+     * 抽象类，继承了AQS
      */
     abstract static class Sync extends AbstractQueuedSynchronizer {
         private static final long serialVersionUID = -5179523762034025860L;
@@ -124,32 +150,44 @@ public class ReentrantLock implements Lock, java.io.Serializable {
         /**
          * Performs {@link Lock#lock}. The main reason for subclassing
          * is to allow fast path for nonfair version.
+         *
+         * 获取锁的方法，由子类实现
          */
         abstract void lock();
 
         /**
          * Performs non-fair tryLock.  tryAcquire is implemented in
          * subclasses, but both need nonfair try for trylock method.
+         *
+         * 非公平锁的tryLock方法实现
          */
         final boolean nonfairTryAcquire(int acquires) {
             final Thread current = Thread.currentThread();
+            // 获取AQS的state变量
             int c = getState();
+            // 若为0，表示当前没有被其他线程占用
             if (c == 0) {
+                // CAS修改state，若修改成功，表示成功获取资源
                 if (compareAndSetState(0, acquires)) {
+                    // 将当前线程设置为owner，到这里表示当前线程成功获取资源
                     setExclusiveOwnerThread(current);
                     return true;
                 }
             }
+            // state不为0，且owner为当前线程
+            // 表示当前线程已经获取到了资源，这里表示“重入”
             else if (current == getExclusiveOwnerThread()) {
                 int nextc = c + acquires;
                 if (nextc < 0) // overflow
                     throw new Error("Maximum lock count exceeded");
+                // 修改state值（因为当前线程已经获取资源，不存在竞争，因此无需CAS操作）
                 setState(nextc);
                 return true;
             }
             return false;
         }
 
+        // 释放锁操作（对state做减法）
         protected final boolean tryRelease(int releases) {
             int c = getState() - releases;
             if (Thread.currentThread() != getExclusiveOwnerThread())
@@ -157,8 +195,12 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             boolean free = false;
             if (c == 0) {
                 free = true;
+                // 成功释放后将owner设为空
                 setExclusiveOwnerThread(null);
             }
+            // 修改state值
+            // PS: 因为可能存在“重入”，因此一次释放操作后当前线程仍有可能占用资源，
+            // 所以不会直接把state设为0
             setState(c);
             return free;
         }
@@ -198,7 +240,15 @@ public class ReentrantLock implements Lock, java.io.Serializable {
     }
 
     /**
+     * 从上面代码可以看出，锁的获取和释放是通过修改AQS的state变量来实现的。lock方法可以
+     * 看做对state执行“加法”操作，而unLock可以看做对state执行“减法”操作，当state为0时，
+     * 表示当前没有线程占用资源。
+     */
+
+    /**
      * Sync object for non-fair locks
+     *
+     * 非公平锁
      */
     static final class NonfairSync extends Sync {
         private static final long serialVersionUID = 7316153563782823691L;
@@ -208,8 +258,11 @@ public class ReentrantLock implements Lock, java.io.Serializable {
          * acquire on failure.
          */
         final void lock() {
+            // CAS尝试将state值修改为1
             if (compareAndSetState(0, 1))
+                // 若修改成功，则将当前线程设为owner，表示成功获取锁
                 setExclusiveOwnerThread(Thread.currentThread());
+            // 若获取失败，则执行AQS的acquire方法（独占模式获取资源）
             else
                 acquire(1);
         }
@@ -218,6 +271,11 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             return nonfairTryAcquire(acquires);
         }
     }
+
+    /**
+     * 可以看到，非公平锁的lock操作为：先尝试以CAS方式修改state的值，若修改成功，则表示成功获取到锁，将owner设为当前线程；
+     * 否则就执行AQS中的acquire方法。
+     */
 
     /**
      * Sync object for fair locks
@@ -232,17 +290,24 @@ public class ReentrantLock implements Lock, java.io.Serializable {
         /**
          * Fair version of tryAcquire.  Don't grant access unless
          * recursive call or no waiters or is first.
+         *
+         * 公平锁的tryAcquire实现
          */
         protected final boolean tryAcquire(int acquires) {
             final Thread current = Thread.currentThread();
             int c = getState();
+            // state 为0，表示资源未被占用
             if (c == 0) {
                 if (!hasQueuedPredecessors() &&
                     compareAndSetState(0, acquires)) {
+                    // 若队列中有其它线程在排队等待，则返回false，表示获取失败；
+                    // 否则，再尝试取修改state的值
+                    // PS：这里是公平锁与非公平锁的区别所在
                     setExclusiveOwnerThread(current);
                     return true;
                 }
             }
+            // 若当前线程已占用了锁，则“重入”
             else if (current == getExclusiveOwnerThread()) {
                 int nextc = c + acquires;
                 if (nextc < 0)
@@ -255,8 +320,15 @@ public class ReentrantLock implements Lock, java.io.Serializable {
     }
 
     /**
+     * 可以看到，与非公平锁相比，公平锁的不同之处在于增加了判断条件 hasQueuedPredecessors，
+     * 即首先判断主队列中是否有其他线程在等待，当没有其他线程在排队时再去获取，否则获取失败。
+     */
+
+    /**
      * Creates an instance of {@code ReentrantLock}.
      * This is equivalent to using {@code ReentrantLock(false)}.
+     *
+     * 构造一个ReentrantLock 实例（非公平锁）
      */
     public ReentrantLock() {
         sync = new NonfairSync();
@@ -267,10 +339,17 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      * given fairness policy.
      *
      * @param fair {@code true} if this lock should use a fair ordering policy
+     *
+     * 构造一个 ReentrantLock 实例（指定是否公平）
      */
     public ReentrantLock(boolean fair) {
         sync = fair ? new FairSync() : new NonfairSync();
     }
+
+    /**
+     * 可以看到，两个构造器都是初始化一个Sync类型的成员变量。而且，当boolean值fair为true时，初始化sync为
+     * FairSync，为false时初始化为NonFairSync，二者分别表示【公平锁】和【非公平锁】。可以看到无参构造默认是非公平锁。
+     */
 
     /**
      * Acquires the lock.
@@ -285,6 +364,8 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      * current thread becomes disabled for thread scheduling
      * purposes and lies dormant until the lock has been acquired,
      * at which time the lock hold count is set to one.
+     *
+     * 获取锁（阻塞式）
      */
     public void lock() {
         sync.lock();
@@ -335,6 +416,8 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      * interrupt over normal or reentrant acquisition of the lock.
      *
      * @throws InterruptedException if the current thread is interrupted
+     *
+     * 获取锁（响应中断）
      */
     public void lockInterruptibly() throws InterruptedException {
         sync.acquireInterruptibly(1);
@@ -365,6 +448,8 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      * @return {@code true} if the lock was free and was acquired by the
      *         current thread, or the lock was already held by the current
      *         thread; and {@code false} otherwise
+     *
+     * 尝试获取锁
      */
     public boolean tryLock() {
         return sync.nonfairTryAcquire(1);
@@ -441,6 +526,8 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      *         the lock could be acquired
      * @throws InterruptedException if the current thread is interrupted
      * @throws NullPointerException if the time unit is null
+     *
+     * 尝试获取锁（有超时等待）
      */
     public boolean tryLock(long timeout, TimeUnit unit)
             throws InterruptedException {
@@ -457,6 +544,8 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      *
      * @throws IllegalMonitorStateException if the current thread does not
      *         hold this lock
+     *
+     * 释放锁
      */
     public void unlock() {
         sync.release(1);
