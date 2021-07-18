@@ -110,6 +110,11 @@ import java.util.function.Consumer;
  *
  * PriorityQueue没有实现BlockingQueue接口，并非阻塞队列。它在逻辑上使用【堆】（即完全二叉树）
  * 结构实现，物理上基于【动态数组】存储
+ *
+ * 小结：
+ * 1.PriorityBlockingQueue是优先队列的阻塞方式实现，它与PriorityQueue内部结构类似，即
+ *   物理结构是可变数组、逻辑结构是堆；
+ * 2.PriorityBlockingQueue 内部元素不能为空，且可比较，使用 ReentrantLock 保证线程安全
  */
 @SuppressWarnings("unchecked")
 public class PriorityBlockingQueue<E> extends AbstractQueue<E>
@@ -269,12 +274,15 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
     public PriorityBlockingQueue(Collection<? extends E> c) {
         this.lock = new ReentrantLock();
         this.notEmpty = lock.newCondition();
+        // 是否需要堆化
         boolean heapify = true; // true if not known to be in heap order
+        // 是否需要筛选空值
         boolean screen = true;  // true if must screen for nulls
         // 如果集合是 SortedSet 类型
         if (c instanceof SortedSet<?>) {
             SortedSet<? extends E> ss = (SortedSet<? extends E>) c;
             this.comparator = (Comparator<? super E>) ss.comparator();
+            // 已经有序，不需要再堆化
             heapify = false;
         }
         // 如果集合是 PriorityQueue 类型
@@ -282,15 +290,19 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
             PriorityBlockingQueue<? extends E> pq =
                 (PriorityBlockingQueue<? extends E>) c;
             this.comparator = (Comparator<? super E>) pq.comparator();
+            //不需要筛选判空
             screen = false;
             if (pq.getClass() == PriorityBlockingQueue.class) // exact match
+                // 不需要堆化
                 heapify = false;
         }
+        // 集合转为数组
         Object[] a = c.toArray();
         int n = a.length;
         // If c.toArray incorrectly doesn't return Object[], copy it.
         if (a.getClass() != Object[].class)
             a = Arrays.copyOf(a, n, Object[].class);
+        // 集合内所有元素都不能为空
         if (screen && (n == 1 || this.comparator != null)) {
             for (int i = 0; i < n; ++i)
                 // 确保集合中每个元素不能为空
@@ -301,6 +313,7 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
         this.queue = a;
         this.size = n;
         if (heapify)
+            // 堆化
             heapify();
     }
 
@@ -312,14 +325,32 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
      *
      * @param array the heap array
      * @param oldCap the length of the array
+     *
+     * 扩容操作
+     *
+     * 这个扩容方法比较有意思：它刚开始会释放锁，而后再重新获取锁。
+     * 1.为什么刚开始要释放锁？
+     *   由于该锁是全局的，其他大部分公有（public）方法也会用到；而扩容操作又相对比较耗时，
+     *   若这里不释放，则某个线程扩容时其他方法调用可能会阻塞。
+     * 2.释放锁之后如何保证线程安全？
+     *   这就用到了成员变量 allocationSpinLock，使用了 Unsafe 类的 CAS 操作。
+     *   它尝试将 allocationSpinLock 的值设置为 1，而一旦操作成功，其他线程就无法进入，
+     *   直到该线程将它重置为 0. 这就保证了同一时间内只能有一个线程在扩容。
+     * 3.在释放锁后的扩容操作中，先后可能会有多个线程扩容，也即会产生多个新容量的空数组（此时它们都未指向原先的数组 queue），如何避免老数据多次复制到新数组呢？
+     * 代码里用到了 queue == array 这个判断。
+     * 比如线程 T1 和 T2 都对原数组进行了扩容，得到了两个 newArray，在后面复制老数据时，
+     *  若其中一个线程已经对 queue 重新赋值并复制后，由于 queue 已经改变，后面的线程就不会再复制一次了。
      */
     private void tryGrow(Object[] array, int oldCap) {
+        // 释放锁
         lock.unlock(); // must release and then re-acquire main lock
         Object[] newArray = null;
+        // 尝试以CAS方法修改allocationSpinLock的值（将0改为1）
         if (allocationSpinLock == 0 &&
             UNSAFE.compareAndSwapInt(this, allocationSpinLockOffset,
                                      0, 1)) {
             try {
+                // 若旧容量n较小（小于64），则扩容为2*n+2，否则扩容为1.5*n
                 int newCap = oldCap + ((oldCap < 64) ?
                                        (oldCap + 2) : // grow faster if small
                                        (oldCap >> 1));
@@ -329,16 +360,22 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
                         throw new OutOfMemoryError();
                     newCap = MAX_ARRAY_SIZE;
                 }
+                // 创建一个新数组
                 if (newCap > oldCap && queue == array)
                     newArray = new Object[newCap];
             } finally {
+                // 将allocationSpinlock重置为0
                 allocationSpinLock = 0;
             }
         }
+        // newArray为空表示未进行上述扩容操作，则当前线程让出CPU时间
         if (newArray == null) // back off if another thread is allocating
             Thread.yield();
+        // 尝试获取锁
         lock.lock();
+        // 到这里表示扩容成功
         if (newArray != null && queue == array) {
+            // 扩容后的新数组
             queue = newArray;
             System.arraycopy(array, 0, newArray, 0, oldCap);
         }
@@ -346,6 +383,9 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
 
     /**
      * Mechanics for poll().  Call only while holding lock.
+     *
+     * 出队
+     * 该方法与 PriorityQueue 的出队操作 poll() 类似
      */
     private E dequeue() {
         int n = size - 1;
@@ -353,8 +393,11 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
             return null;
         else {
             Object[] array = queue;
+            // 取数据中的第一个元素
             E result = (E) array[0];
+            // 获取最后一个元素
             E x = (E) array[n];
+            // 将最后一个元素置空，并恢复堆结构
             array[n] = null;
             Comparator<? super E> cmp = comparator;
             if (cmp == null)
@@ -465,7 +508,7 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
                                                     int n,
                                                     Comparator<? super T> cmp) {
         if (n > 0) {
-            // n为数组大小，数组的中间位置
+            // n为数组大小，获取数组的中间位置
             int half = n >>> 1;
             while (k < half) {
                 // 获取索引为 k 的节点的左子节点索引child
@@ -478,10 +521,10 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
                 if (right < n && cmp.compare((T) c, (T) array[right]) > 0)
                     // 取左右子节点中较小的一个
                     c = array[child = right];
-                // 给定的元素 x 与较小的子节点的值比较
+                // 给定的元素 x 与较小的子节点的值比较，若x不大于子节点的值，停止交换
                 if (cmp.compare(x, (T) c) <= 0)
                     break;
-                // 将该节点与子节点互换
+                // 将该节点与其较小的子节点互换位置
                 array[k] = c;
                 k = child;
             }
@@ -505,16 +548,29 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
         int half = (n >>> 1) - 1;
         Comparator<? super E> cmp = comparator;
         // 根据 comparator 是否为空采用不同的方法
+        // PS: 二者操作基本一样，只是Comparator和Comparable的区别
         if (cmp == null) {
+            // 从数组的中间位置开始遍历
             for (int i = half; i >= 0; i--)
                 siftDownComparable(i, (E) array[i], array, n);
         }
         // comparator 不为空
         else {
+            // 从数组的中间位置开始遍历
             for (int i = half; i >= 0; i--)
                 siftDownUsingComparator(i, (E) array[i], array, n, cmp);
         }
     }
+
+    /**
+     * 入队方法有：
+     * add(E)
+     * put(E)
+     * offer(E, timeout, TimeUnit)
+     * offer(E)
+     *
+     * 上述三个方法内部都是通过offer(e)方法实现的，因此只需分析offer(e)方法即可
+     */
 
     /**
      * Inserts the specified element into this priority queue.
@@ -542,23 +598,29 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
      * @throws NullPointerException if the specified element is null
      */
     public boolean offer(E e) {
+        // 插入元素不能为空
         if (e == null)
             throw new NullPointerException();
+        // 获取锁，保证线程安全
         final ReentrantLock lock = this.lock;
         lock.lock();
         int n, cap;
         Object[] array;
+        // 如果容量不够，则进行扩容（注意这里是一个循环）
         while ((n = size) >= (cap = (array = queue).length))
             tryGrow(array, cap);
         try {
             Comparator<? super E> cmp = comparator;
+            // 根据Comparator是否为空采用不同的堆化策略
             if (cmp == null)
                 siftUpComparable(n, e, array);
             else
                 siftUpUsingComparator(n, e, array, cmp);
             size = n + 1;
+            // 有新元素插入了，唤醒notEmpty条件下等待的线程（消费者）
             notEmpty.signal();
         } finally {
+            //释放锁
             lock.unlock();
         }
         return true;
@@ -597,6 +659,17 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
         return offer(e); // never need to block
     }
 
+    /**
+     * 出队操作：
+     * poll(),take(),peek()
+     *
+     * 可以看到这几个出队的操作都加了锁，内部都调用了 dequeue 方法：
+     */
+
+    /**
+     * 出队
+     * @return
+     */
     public E poll() {
         final ReentrantLock lock = this.lock;
         lock.lock();
@@ -607,6 +680,7 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
         }
     }
 
+    // 出队（队列为空时阻塞）
     public E take() throws InterruptedException {
         final ReentrantLock lock = this.lock;
         lock.lockInterruptibly();
@@ -620,6 +694,7 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
         return result;
     }
 
+    // 有超时等待的出队
     public E poll(long timeout, TimeUnit unit) throws InterruptedException {
         long nanos = unit.toNanos(timeout);
         final ReentrantLock lock = this.lock;
