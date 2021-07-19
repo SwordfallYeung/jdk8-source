@@ -211,6 +211,134 @@ import java.util.Collection;
  *
  * @since 1.5
  * @author Doug Lea
+ *
+ * ReentrantLock是一种互斥的可重入锁，可用于处理并发场景下的线程安全问题。而很多时候会出现"读多写少"的情况，
+ * 若用ReentrantLock会降低并发量，此时就比较适合ReentrantReadWriteLock出场了。
+ *
+ * ReentrantReadWriteLock是读写锁，它维护了一对锁：一个读锁，一个写锁。读锁之间是共享的，写锁是互斥的。
+ * 与ReentrantLock相比，读写锁在读多写少的场景下允许更高的并发量。
+ *
+ * public class TestRDLock{
+ *     //创建一个线程池
+ *     private static ExecutorService threadPoolExecutor = new ThreadPoolExecutor(10, 20, 60, TimeUnit.SECONDS, new ArrayBlockingQueue<>(100));
+ *     //创建一个读写锁实例
+ *     private static final ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
+ *
+ *     public static void main(String[] args){
+ *         for(int i = 0; i < 5; i++){
+ *             //这里可以尝试"读读"、"读写"和"写写"场景的代码测试
+ *             threadPoolExecutor.execute(new ReadTask());
+ *             threadPoolExecutor.execute(new WriteTask());
+ *         }
+ *     }
+ *
+ *     // 写操作
+ *     private static class WriteTask implements Runnable {
+ *         @Override
+ *         public void run(){
+ *             readWriteLock.writeLock().lock();
+ *             try{
+ *                 System.out.println(Thread.currentThread().getName()+ " 获取写锁");
+ *                 TimeUnit.SECONDS.sleep(5);
+ *             }catch (InterruptedException e){
+ *                 e.printStackTrace();
+ *             }finally{
+ *                 readWriteLock.writeLock().unlock();
+ *                 System.out.println(Thread.currentThread().getName() + " 释放了写锁");
+ *             }
+ *         }
+ *     }
+ *
+ *     private static class ReadTask implements Runnable{
+ *         @Override
+ *         public void run(){
+ *             readWriteLock.readLock().lock();
+ *             try{
+ *                 System.out.println(Thread.currentThread().getName() + " 获取读锁");
+ *                 TimeUnit.SECONDS.sleep(5);
+ *             }catch (InterruptedException e){
+ *                 e.printStackTrace();
+ *             }finally{
+ *                 readWriteLock.readLock().unlock();
+ *                 System.out.println(Thread.currentThread().getName() + "释放了读锁")
+ *             }
+ *         }
+ *     }
+ * }
+ *
+ * 场景一：更新缓存后执行锁降级
+ * class CachedData{
+ *     Object data;
+ *     volatile boolean cacheValid;
+ *     final ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
+ *
+ *     void processCachedData(){
+ *         // 先获取读锁
+ *         rwl.readLock().lock();
+ *         if(!cacheValid){
+ *             rwl.readLock().unlock();
+ *             rwl.writeLock().lock();
+ *             try{
+ *                 if(!cacheValid){
+ *                     data = ...
+ *                     cacheValid = true;
+ *                 }
+ *                 rwl.readLock().lock();
+ *             }finally{
+ *                 // 释放写锁（仍然持有读锁，即降级为读锁）
+ *                 rwl.writeLock().unlock();
+ *             }
+ *         }
+ *
+ *         try{
+ *             use(data);
+ *         }finally{
+ *             //释放读锁
+ *             rwl.readLock().unlock();
+ *         }
+ *     }
+ * }
+ *
+ * 场景二：在较大的集合中，读多写少的情况
+ * class RWDictionary{
+ *     private final Map<String, Data> m = new TreeMap<String, Data>();
+ *     private final ReentrantReadWriteLock rwl = new ReentrantReadWriteLock();
+ *     private final Lock r = rwl.readLock();
+ *     private final Lock w = rwl.writeLock();
+ *
+ *     public Data get(String key){
+ *         r.lock();
+ *         try{
+ *             return m.get(key);
+ *         }finally{
+ *             r.unlock();
+ *         }
+ *     }
+ *
+ *     public String[] allKeys(){
+ *         r.lock();
+ *         try{
+ *             return m.put(key, value);
+ *         }finally{
+ *             w.unlock();
+ *         }
+ *     }
+ *
+ *     public void clear(){
+ *         w.lock();
+ *         try{
+ *             m.clear();
+ *         }finally{
+ *             w.unlock();
+ *         }
+ *     }
+ * }
+ *
+ * 小结：
+ * 1.ReentrantReadWriteLock是一种读写锁，它持有一对锁：读锁和写锁。其中读锁之间是共享的，写锁是互斥的。
+ * 2.【读多写少】的场景下，ReentrantReadWriteLock比ReentrantLock有更高的并发性。
+ * 3. 与ReentrantLock原理类似，ReentrantReadWriteLock内部也基于AQS：其中读锁基于【共享模式】实现，
+ *    写锁基于【独占模式】实现。
  */
 public class ReentrantReadWriteLock
         implements ReadWriteLock, java.io.Serializable {
@@ -220,11 +348,14 @@ public class ReentrantReadWriteLock
     /** Inner class providing writelock */
     private final ReentrantReadWriteLock.WriteLock writerLock;
     /** Performs all synchronization mechanics */
+    // 执行所有的同步机制
     final Sync sync;
 
     /**
      * Creates a new {@code ReentrantReadWriteLock} with
      * default (nonfair) ordering properties.
+     *
+     * 无参构造器（默认非公平）
      */
     public ReentrantReadWriteLock() {
         this(false);
@@ -235,6 +366,9 @@ public class ReentrantReadWriteLock
      * the given fairness policy.
      *
      * @param fair {@code true} if this lock should use a fair ordering policy
+     *
+     * 以给定的公平策略创建一个 ReentrantReadWriteLock 对象
+     * true为公平，false为非公平
      */
     public ReentrantReadWriteLock(boolean fair) {
         sync = fair ? new FairSync() : new NonfairSync();
@@ -242,12 +376,16 @@ public class ReentrantReadWriteLock
         writerLock = new WriteLock(this);
     }
 
+    // 提供读锁的内部类
     public ReentrantReadWriteLock.WriteLock writeLock() { return writerLock; }
+    // 提供写锁的内部类
     public ReentrantReadWriteLock.ReadLock  readLock()  { return readerLock; }
 
     /**
      * Synchronization implementation for ReentrantReadWriteLock.
      * Subclassed into fair and nonfair versions.
+     *
+     * Sync类继承自AQS（与ReentrantLock中的Sync类似）
      */
     abstract static class Sync extends AbstractQueuedSynchronizer {
         private static final long serialVersionUID = 6317671515068378041L;
@@ -258,20 +396,28 @@ public class ReentrantReadWriteLock
          * The lower one representing the exclusive (writer) lock hold count,
          * and the upper the shared (reader) hold count.
          */
-
+        // 使用AQS中的state变量（int类型）来记录读写锁的占用情况
+        // 其中高16位记录读锁的持有次数；
+        // 低16位记录写锁的重入次数；
         static final int SHARED_SHIFT   = 16;
         static final int SHARED_UNIT    = (1 << SHARED_SHIFT);
         static final int MAX_COUNT      = (1 << SHARED_SHIFT) - 1;
         static final int EXCLUSIVE_MASK = (1 << SHARED_SHIFT) - 1;
 
         /** Returns the number of shared holds represented in count  */
+        // 共享锁（读锁）的持有次数
         static int sharedCount(int c)    { return c >>> SHARED_SHIFT; }
         /** Returns the number of exclusive holds represented in count  */
+        // 互斥锁（写锁）的重入次数
         static int exclusiveCount(int c) { return c & EXCLUSIVE_MASK; }
 
         /**
          * A counter for per-thread read hold counts.
          * Maintained as a ThreadLocal; cached in cachedHoldCounter
+         *
+         * 每个线程持有读锁的计数器，
+         * 以 ThreadLocal 形式保存，缓存在cachedHoldCounter
+         * 该类的主要作用是记录线程持有读锁的数量，可理解为<tid, count>的形式
          */
         static final class HoldCounter {
             int count = 0;
@@ -294,6 +440,8 @@ public class ReentrantReadWriteLock
          * The number of reentrant read locks held by current thread.
          * Initialized only in constructor and readObject.
          * Removed whenever a thread's read hold count drops to 0.
+         *
+         * 当前线程持有的可重入读锁的数量（数量为0时删除）
          */
         private transient ThreadLocalHoldCounter readHolds;
 
@@ -330,6 +478,9 @@ public class ReentrantReadWriteLock
          *
          * <p>This allows tracking of read holds for uncontended read
          * locks to be very cheap.
+         *
+         * firstReader：第一个获取读锁的线程
+         * firstReaderHoldCount：firstReader的持有计数
          */
         private transient Thread firstReader = null;
         private transient int firstReaderHoldCount;
@@ -343,12 +494,17 @@ public class ReentrantReadWriteLock
          * Acquires and releases use the same code for fair and
          * nonfair locks, but differ in whether/how they allow barging
          * when queues are non-empty.
+         *
+         * 对于公平锁和非公平锁，获取和释放锁使用的代码相同；
+         * 但在队列非空时，它们是否或如何运行插入的方式不同。
          */
 
         /**
          * Returns true if the current thread, when trying to acquire
          * the read lock, and otherwise eligible to do so, should block
          * because of policy for overtaking other waiting threads.
+         *
+         * 当前线程在尝试（或有资格）获取读锁时，是否应该由于策略原因而阻塞
          */
         abstract boolean readerShouldBlock();
 
@@ -356,6 +512,8 @@ public class ReentrantReadWriteLock
          * Returns true if the current thread, when trying to acquire
          * the write lock, and otherwise eligible to do so, should block
          * because of policy for overtaking other waiting threads.
+         *
+         * 当前线程在尝试（或有资格）获取写锁时，是否应该由于策略原因而阻塞
          */
         abstract boolean writerShouldBlock();
 
@@ -365,7 +523,7 @@ public class ReentrantReadWriteLock
          * both read and write holds that are all released during a
          * condition wait and re-established in tryAcquire.
          */
-
+        // 释放写锁
         protected final boolean tryRelease(int releases) {
             if (!isHeldExclusively())
                 throw new IllegalMonitorStateException();
@@ -377,6 +535,7 @@ public class ReentrantReadWriteLock
             return free;
         }
 
+        // 获取写锁
         protected final boolean tryAcquire(int acquires) {
             /*
              * Walkthrough:
@@ -388,6 +547,11 @@ public class ReentrantReadWriteLock
              *    it is either a reentrant acquire or
              *    queue policy allows it. If so, update state
              *    and set owner.
+             *
+             * 流程：
+             * 1. 若其他线程持有读锁或写锁（技术不为零），返回false；
+             * 2. 若持有数量饱和（超出上限），返回false；
+             * 3. 该线程有资格获取锁，更新state并设置为owner.
              */
             Thread current = Thread.currentThread();
             int c = getState();
@@ -402,6 +566,7 @@ public class ReentrantReadWriteLock
                 setState(c + acquires);
                 return true;
             }
+            // 若获取写锁时应该阻塞，或者更新state失败，返回false
             if (writerShouldBlock() ||
                 !compareAndSetState(c, c + acquires))
                 return false;
@@ -409,8 +574,10 @@ public class ReentrantReadWriteLock
             return true;
         }
 
+        // 释放读锁
         protected final boolean tryReleaseShared(int unused) {
             Thread current = Thread.currentThread();
+            // 若当前线程是第一个持有读锁的线程
             if (firstReader == current) {
                 // assert firstReaderHoldCount > 0;
                 if (firstReaderHoldCount == 1)
@@ -418,6 +585,7 @@ public class ReentrantReadWriteLock
                 else
                     firstReaderHoldCount--;
             } else {
+                // 更新缓存
                 HoldCounter rh = cachedHoldCounter;
                 if (rh == null || rh.tid != getThreadId(current))
                     rh = readHolds.get();
@@ -429,6 +597,7 @@ public class ReentrantReadWriteLock
                 }
                 --rh.count;
             }
+            // 更新state
             for (;;) {
                 int c = getState();
                 int nextc = c - SHARED_UNIT;
@@ -445,6 +614,7 @@ public class ReentrantReadWriteLock
                 "attempt to unlock read lock, not locked by current thread");
         }
 
+        // 获取读锁
         protected final int tryAcquireShared(int unused) {
             /*
              * Walkthrough:
@@ -460,37 +630,58 @@ public class ReentrantReadWriteLock
              * 3. If step 2 fails either because thread
              *    apparently not eligible or CAS fails or count
              *    saturated, chain to version with full retry loop.
+             * 流程：
+             * 1. 如果其他线程持有写锁，获取失败；
+             * 2. 否则，该线程有资格获取，因此请询问它是否由于队列策略而阻塞；
+             *    若不阻塞，尝试通过CAS更新状态计数。
+             *    注意：这一步没有检查可重入的获取，推迟到完整版本；
+             *          以避免在明显不可重入的情况下检查持有计数。
+             * 3. 如果第二步失败，要么是因为线程明显不符合条件、CAS失败或计数饱和，
+             *    则进行完整重试版本。
              */
             Thread current = Thread.currentThread();
             int c = getState();
+            // step1. 若写锁被其他线程占用，则获取失败
+            //        exclusiveCount(c) != 0 表示写锁被占用
             if (exclusiveCount(c) != 0 &&
                 getExclusiveOwnerThread() != current)
                 return -1;
+            // step2. 获取读锁数量
             int r = sharedCount(c);
             if (!readerShouldBlock() &&
                 r < MAX_COUNT &&
                 compareAndSetState(c, c + SHARED_UNIT)) {
+                // 读锁未被占用，设置该线程是第一个持有读锁的线程
                 if (r == 0) {
                     firstReader = current;
                     firstReaderHoldCount = 1;
+                // 该线程已持有读锁，计数加1
                 } else if (firstReader == current) {
                     firstReaderHoldCount++;
+                // 其他线程已持有读锁
                 } else {
+                    // 取缓存
                     HoldCounter rh = cachedHoldCounter;
+                    // 若未初始化，或者拿到的不是当前线程的计数，则从ThreadLocal中获取
                     if (rh == null || rh.tid != getThreadId(current))
                         cachedHoldCounter = rh = readHolds.get();
                     else if (rh.count == 0)
                         readHolds.set(rh);
+                    // 增加计数
                     rh.count++;
                 }
+                // 获取成功
                 return 1;
             }
+            // step3. 若step2获取失败，则执行该步骤
             return fullTryAcquireShared(current);
         }
 
         /**
          * Full version of acquire for reads, that handles CAS misses
          * and reentrant reads not dealt with in tryAcquireShared.
+         *
+         * 获取读锁的完整版，处理tryAcquireShared中未处理的CAS丢失和可重入读取
          */
         final int fullTryAcquireShared(Thread current) {
             /*
@@ -502,6 +693,7 @@ public class ReentrantReadWriteLock
             HoldCounter rh = null;
             for (;;) {
                 int c = getState();
+                // 如果其他线程占用写锁，获取失败
                 if (exclusiveCount(c) != 0) {
                     if (getExclusiveOwnerThread() != current)
                         return -1;
@@ -551,6 +743,9 @@ public class ReentrantReadWriteLock
          * Performs tryLock for write, enabling barging in both modes.
          * This is identical in effect to tryAcquire except for lack
          * of calls to writerShouldBlock.
+         *
+         * 执行写锁的tryLock方法
+         * 与tryAcquire相比，该方法未调用writeShouldBlock
          */
         final boolean tryWriteLock() {
             Thread current = Thread.currentThread();
@@ -572,6 +767,9 @@ public class ReentrantReadWriteLock
          * Performs tryLock for read, enabling barging in both modes.
          * This is identical in effect to tryAcquireShared except for
          * lack of calls to readerShouldBlock.
+         *
+         * 执行读锁的tryLock方法
+         * 与tryAcquiredShard相比，该方法未调用readerShouldBlock
          */
         final boolean tryReadLock() {
             Thread current = Thread.currentThread();
@@ -664,7 +862,13 @@ public class ReentrantReadWriteLock
     }
 
     /**
+     * Sync类继承自AQS，主要重写了AQS中独占模式和共享模式下
+     * 获取和释放锁的方法。
+     */
+
+    /**
      * Nonfair version of Sync
+     * NonfairSync继承自Sync类，提供非公平策略的实现
      */
     static final class NonfairSync extends Sync {
         private static final long serialVersionUID = -8159625535654395037L;
@@ -678,13 +882,23 @@ public class ReentrantReadWriteLock
              * only a probabilistic effect since a new reader will not
              * block if there is a waiting writer behind other enabled
              * readers that have not yet drained from the queue.
+             * 调用父类AQS中的方法实现
              */
             return apparentlyFirstQueuedIsExclusive();
         }
     }
 
     /**
+     * 非公平策略中，writerShouldBlock返回false，说明写线程无需阻塞；
+     *
+     * readerShouldBlock则是调用父类AQS中的apparentlyFirstQueuedIsExclusive方法实现的，
+     * 该方法通过判断等待队列中的第一个线程是否为写线程，若是则返回true，表示给写线程让道。
+     */
+
+    /**
      * Fair version of Sync
+     *
+     * FairSync也继承自Sync类，提供公平策略的实现
      */
     static final class FairSync extends Sync {
         private static final long serialVersionUID = -2274990926593161451L;
@@ -697,7 +911,16 @@ public class ReentrantReadWriteLock
     }
 
     /**
+     * 在公平策略中，两个方法都通过调用父类AQS的hasQueuedPredecessors方法判别，二者都是根据等待队列中是否有其他线程，
+     * 若有其他线程，则当前线程等待。
+     *
+     * 这就是公平的体现：无论读写，都乖乖去排队，别插队。
+     */
+
+    /**
      * The lock returned by method {@link ReentrantReadWriteLock#readLock}.
+     *
+     * 读锁的内部类
      */
     public static class ReadLock implements Lock, java.io.Serializable {
         private static final long serialVersionUID = -5992448646407690164L;
@@ -722,6 +945,10 @@ public class ReentrantReadWriteLock
          * <p>If the write lock is held by another thread then
          * the current thread becomes disabled for thread scheduling
          * purposes and lies dormant until the read lock has been acquired.
+         *
+         * 获取读锁（不可中断）：
+         * 1. 若其他线程未持有写锁，则获取读锁并立即返回；
+         * 2. 若其他线程持有写锁，则由于线程调度，当前线程被禁用并休眠，直到获取读锁。
          */
         public void lock() {
             sync.acquireShared(1);
@@ -767,6 +994,11 @@ public class ReentrantReadWriteLock
          * lock.
          *
          * @throws InterruptedException if the current thread is interrupted
+         *
+         * 以中断方式获取读锁：
+         * 1. 若其他线程未持有写锁，则获取读锁并立即返回；
+         * 2. 若其他线程持有写锁，则由于线程调度，当前线程被禁用并休眠，
+         *       直到当前获取到读锁，或者被其他线程中断。
          */
         public void lockInterruptibly() throws InterruptedException {
             sync.acquireSharedInterruptibly(1);
@@ -794,6 +1026,9 @@ public class ReentrantReadWriteLock
          * {@code false}.
          *
          * @return {@code true} if the read lock was acquired
+         *
+         * 仅当另一个线程未持有写锁时才能获取读锁。
+         * 若另一个线程持有写锁，则立即返回false
          */
         public boolean tryLock() {
             return sync.tryReadLock();
@@ -865,6 +1100,8 @@ public class ReentrantReadWriteLock
          * @return {@code true} if the read lock was acquired
          * @throws InterruptedException if the current thread is interrupted
          * @throws NullPointerException if the time unit is null
+         *
+         * 获取读锁（与tryLock方法类似，多了超时等待）
          */
         public boolean tryLock(long timeout, TimeUnit unit)
                 throws InterruptedException {
@@ -876,6 +1113,9 @@ public class ReentrantReadWriteLock
          *
          * <p>If the number of readers is now zero then the lock
          * is made available for write lock attempts.
+         *
+         * 尝试释放该锁。
+         * 若读线程的数量为零，则该锁可用于尝试获取写锁
          */
         public void unlock() {
             sync.releaseShared(1);
@@ -906,7 +1146,14 @@ public class ReentrantReadWriteLock
     }
 
     /**
+     * ReadLock类实现了Lock接口，它的主要方法就是Lock接口所定义的方法（获取和释放锁）。
+     * 读锁之间是共享的，ReadLock的主要方法都通过AQS共享模式的方法实现的。
+     */
+
+    /**
      * The lock returned by method {@link ReentrantReadWriteLock#writeLock}.
+     *
+     * 写锁的内部类
      */
     public static class WriteLock implements Lock, java.io.Serializable {
         private static final long serialVersionUID = -4992448646407690164L;
@@ -938,6 +1185,11 @@ public class ReentrantReadWriteLock
          * thread becomes disabled for thread scheduling purposes and
          * lies dormant until the write lock has been acquired, at which
          * time the write lock hold count is set to one.
+         *
+         * 获取写锁。
+         * 1. 若无其他线程持有读锁或写锁，则获取写锁并立即放回，并将写锁计数设为1；
+         * 2. 若当前线程已经持有写锁，则将其计数加1，并立即返回（可重入）；
+         * 3. 若锁被其他线程持有，当前线程被禁用并处于休眠状态，直到获取写锁（计数设为1）。
          */
         public void lock() {
             sync.acquire(1);
@@ -993,6 +1245,12 @@ public class ReentrantReadWriteLock
          * lock.
          *
          * @throws InterruptedException if the current thread is interrupted
+         *
+         * 获取写锁（可被中断）
+         * 1. 若无其他线程持有读锁或写锁，则获取并立即返回写锁，并将计数设为1；
+         * 2. 若当前线程已经持有写锁，则将其计数加1，并立即返回（可重入）；
+         * 3. 若锁被其他线程持有，当前线程被禁用并处于休眠状态，
+         *        直到当前线程获取写锁（计数设为1）或被其他线程中断
          */
         public void lockInterruptibly() throws InterruptedException {
             sync.acquireInterruptibly(1);
@@ -1026,6 +1284,8 @@ public class ReentrantReadWriteLock
          * @return {@code true} if the lock was free and was acquired
          * by the current thread, or the write lock was already held
          * by the current thread; and {@code false} otherwise.
+         *
+         * 仅当调用时其他线程未持有该写锁时，才获取该写锁。
          */
         public boolean tryLock( ) {
             return sync.tryWriteLock();
@@ -1109,6 +1369,8 @@ public class ReentrantReadWriteLock
          *
          * @throws InterruptedException if the current thread is interrupted
          * @throws NullPointerException if the time unit is null
+         *
+         * 尝试获取写锁（响应中断，有超时等待）
          */
         public boolean tryLock(long timeout, TimeUnit unit)
                 throws InterruptedException {
@@ -1126,6 +1388,10 @@ public class ReentrantReadWriteLock
          *
          * @throws IllegalMonitorStateException if the current thread does not
          * hold this lock
+         *
+         * 尝试释放锁
+         * 若当前线程是锁的持有者，则持有计数将减少；若当前持有计数为零则释放锁。
+         * 若当前线程不是锁的持有者，则抛出异常IllegalMonitorStateException
          */
         public void unlock() {
             sync.release(1);
@@ -1201,6 +1467,8 @@ public class ReentrantReadWriteLock
          * @return {@code true} if the current thread holds this lock and
          *         {@code false} otherwise
          * @since 1.6
+         *
+         * 查询此写锁是否由当前线程持有
          */
         public boolean isHeldByCurrentThread() {
             return sync.isHeldExclusively();
@@ -1215,11 +1483,18 @@ public class ReentrantReadWriteLock
          * @return the number of holds on this lock by the current thread,
          *         or zero if this lock is not held by the current thread
          * @since 1.6
+         *
+         * 查询当前线程对该写锁的持有计数
          */
         public int getHoldCount() {
             return sync.getWriteHoldCount();
         }
     }
+
+    /**
+     * 与ReadLock类似，WriteLock类也实现了Lock接口，其主要方法也是Lock接口所定义的方法
+     * （获取和释放锁）。而写锁是互斥的，WriteLock的大部分方法都是通过AQS独占模式的方法实现的
+     */
 
     // Instrumentation and status
 
