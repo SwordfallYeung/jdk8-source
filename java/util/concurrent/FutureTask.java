@@ -59,6 +59,14 @@ import java.util.concurrent.locks.LockSupport;
  * @since 1.5
  * @author Doug Lea
  * @param <V> The result type returned by this FutureTask's {@code get} methods
+ *
+ * FutureTask是一个可取消的、异步执行任务的类
+ *
+ * 它实现了RunnableFuture接口，而该接口又继承了Runnable接口和Future接口，
+ * 因此FutureTask也具有这两个接口所定义的特征。FutureTask的主要功能：
+ * 1. 异步执行任务，并且任务只执行一次；
+ * 2. 监控任务是否完成，取消任务；
+ * 3. 获取任务执行结果。
  */
 public class FutureTask<V> implements RunnableFuture<V> {
     /*
@@ -88,6 +96,13 @@ public class FutureTask<V> implements RunnableFuture<V> {
      * NEW -> COMPLETING -> EXCEPTIONAL
      * NEW -> CANCELLED
      * NEW -> INTERRUPTING -> INTERRUPTED
+     *
+     * 任务的状态
+     * 其中state表示任务的状态，总共有7种，它们之间的状态转换可能有以下4种情况：
+     * 1. 任务执行正常：NEW -> COMPLETING -> NORMAL
+     * 2. 任务执行异常：NEW -> COMPLETING -> EXCEPTIONAL
+     * 3. 任务取消：   NEW -> CANCELLED
+     * 4. 任务中断：   NEW -> INTERRUPTING -> INTERRUPTED
      */
     private volatile int state;
     private static final int NEW          = 0;
@@ -350,6 +365,8 @@ public class FutureTask<V> implements RunnableFuture<V> {
      * Simple linked list nodes to record waiting threads in a Treiber
      * stack.  See other classes such as Phaser and SynchronousQueue
      * for more detailed explanation.
+     *
+     * 内部嵌套类WaitNode
      */
     static final class WaitNode {
         volatile Thread thread;
