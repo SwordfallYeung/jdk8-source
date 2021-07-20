@@ -292,7 +292,20 @@ import sun.misc.Unsafe;
  *  中许多实现的基石。因此，在分析并发包中常用类的实现原理前，有必要先理解一下AQS，之后再分析的时候就会
  *  简单不少。
  *
- *  AQS内部有一个核心变量state；此外，以Node类为节点维护了两种队列：主队列(main queue)和条件队列(condition queue)，
+ * 试想一下锁的应用场景，当线程试图请求资源的时候，先调用lock，如果获得锁，则得以继续执行，而没有获得，则排队阻塞，
+ * 直到锁被其他线程释放，听起来就像是一个列队的结构。而实际上AQS底层就是一个先进先出FIFO的等待队列：
+ *                                       -------
+ *                                     （ state )
+ *                                       -------
+ *                                    获取 /|\
+ *             ____________________________|_________________________
+ *            |                 |                 |                 |
+ *         ———————  <—prev—  ———————  <—prev—  ———————  <—prev—  ———————
+ *  head  | Node |  —next—> | Node |  —next—> | Node |  —next—> | Node |  tail (主队列)
+ *        ———————           ———————           ———————           ———————
+ *
+ *
+ *  AQS内部有一个核心变量state；此外，以Node类为基本结构节点维护了两种队列：主队列(main queue)和条件队列(condition queue)，
  *  分别可以将二者理解为双链表和单链表。
  *
  *  AQS就像是提供了一套基础设施的设备，其它常用类如ReentrantLock、CountdownLatch等的内部嵌套类Sync，都是
@@ -302,7 +315,7 @@ import sun.misc.Unsafe;
  *  AbstractQueuedSynchronizer是一个抽象类，不能直接被实例化
  *  AbstractQueuedLongSynchronizer 与AQS基本完全一样，区别在于前者的state变量为long类型，而AQS为int类型
  *
- *  场景分析：
+ *  小结&场景分析：
  *  为了便于理解独占模式和共享模式下队列和节点的状态，下面简要举例分析。
  *  场景如下：有T0-T4共5个线程按先后顺序获取资源，其中T2和T3为共享模式，T0、T1和T4为独占模式。
  *  就此场景分析：T0先获取到资源（假设占用时间较长），而后T1-T4再获取则失败，会依次进入主队列。此时主队列中
@@ -322,7 +335,7 @@ import sun.misc.Unsafe;
  *                   ------------------------        ------------------------        ------------------------        ------------------------
  *                   |          T1          |  --->  |          T2          |  --->  |          T3          |  --->  |          T4          |
  *                   | nextWaiter=EXCLUSIVE |        |   nextWaiter=SHARED  |        |   nextWaiter=SHARED  |        | nextWaiter=EXCLUSIVE |
- *  T0释放，T1获取   |      ws=SIGNAL       |        |      ws=SIGNAL       |        |      ws=SIGNAL       |        |         ws=0         |
+ *  T0释放，T1获取    |      ws=SIGNAL       |        |      ws=SIGNAL       |        |      ws=SIGNAL       |        |         ws=0         |
  *                   |       prev=T0        | <---   |       prev=T1        | <---   |       prev=T2        | <---   |       prev=T3        |
  *                   |       next=T2        |        |       next=T3        |        |       next=T4        |        |      next=null       |
  *                   ------------------------        ------------------------        ------------------------        ------------------------
@@ -504,6 +517,13 @@ public abstract class AbstractQueuedSynchronizer
          * The field is initialized to 0 for normal sync nodes, and
          * CONDITION for condition nodes.  It is modified using CAS
          * (or when possible, unconditional volatile writes).
+         *
+         * 用来表明当前节点的等待状态，主要有下面几个：
+         * CANCELLED: 1，表示当前的线程被取消
+         * SIGNAL   :-1，表示后继节点需要运行，也就是unpark
+         * CONDITION:-2, 表示线程在等待condition
+         * PROPAGATE:-3, 表示后续的acquireShare能够得以执行，在共享模式中用到
+         * 0        :    表示初始状态，在队列中等待
          */
         volatile int waitStatus;
 
@@ -543,7 +563,7 @@ public abstract class AbstractQueuedSynchronizer
          * The thread that enqueued this node.  Initialized on
          * construction and nulled out after use.
          *
-         * 节点的线程
+         * 节点的等待线程
          */
         volatile Thread thread;
 
@@ -557,7 +577,7 @@ public abstract class AbstractQueuedSynchronizer
          * we save a field by using special value to indicate shared
          * mode.
          *
-         * 后继节点（条件队列）
+         * 后继节点（条件队列），在condition中用到
          */
         Node nextWaiter;
 
@@ -624,13 +644,16 @@ public abstract class AbstractQueuedSynchronizer
     /**
      * The synchronization state.
      *
-     * 状态，AQS维护的一个核心变量
+     * 同步状态，AQS维护的一个核心变量
      */
     private volatile int state;
 
     /**
      * 其中，head和tail为主队列的头尾节点，state为AQS维护的核心变量，ReentrantLock等类中
      * 的Sync类实现，都是通过操作state来实现各自功能的
+     *
+     * AQS的基本框架就是：state作为同步资源状态，当线程请求锁的时候，根据state数值判断能否获得锁。
+     * 不能，则加入队列中等待。当持有锁的线程释放的时候，根据队列里的顺序来决定谁先获得锁。
      */
 
     /**
@@ -680,15 +703,19 @@ public abstract class AbstractQueuedSynchronizer
      * Inserts node into queue, initializing if necessary. See picture above.
      * @param node the node to insert
      * @return node's predecessor
+     *
+     * enq()方法为了防止在addWaiter中，节点插入队列失败没有return，或者队列没有初始化，在for循环中反复执行，
+     * 确保插入成功，返回节点
      */
     private Node enq(final Node node) {
         for (;;) {
             Node t = tail;
-            // 尾节点为空，表示当前队列未初始化
+            // 尾节点为空，表示当前队列未初始化，则进行队列初始化
             if (t == null) { // Must initialize
                 // 将队列的头尾节点都设置为一个新的节点
                 if (compareAndSetHead(new Node()))
                     tail = head;
+             // 重复执行插入直到return
             } else {
                 // 将 node 节点插入主队列末尾
                 node.prev = t;
@@ -714,8 +741,8 @@ public abstract class AbstractQueuedSynchronizer
         // PS：独占模式 Node.EXECUSIVE，共享模式 Node.SHARED
         Node node = new Node(Thread.currentThread(), mode);
         // Try the fast path of enq; backup to full enq on failure
-        // 判断尾节点是否为空，不为空，则把节点node附加到尾节点tail上，这时节点node变为尾节点
         Node pred = tail;
+        // 判断尾节点是否为空，不为空，则把节点node插入队列尾部，并维持节点前后关系
         if (pred != null) {
             // 节点node的前节点指为尾节点pred
             node.prev = pred;
@@ -726,7 +753,7 @@ public abstract class AbstractQueuedSynchronizer
                 return node;
             }
         }
-        // 如果尾节点tail为空，表示主队列未初始化
+        // 如果尾节点tail为空，表示主队列未初始化，即上一步失败，则在enq中继续处理
         enq(node);
         return node;
     }
@@ -872,14 +899,19 @@ public abstract class AbstractQueuedSynchronizer
      *
      * 该方法的主要操作：
      *             1. 将node节点设置为取消（CANCELLED）状态；
-     *             2. 找到它在队列中非取消状态的前驱节点pred;
-     *                1）.若node节点是尾节点，则前驱节点的后继设为空；
-     *                2）.若pred不是头节点，且状态为SIGNAL，则后继节点设为node的后继节点；
-     *                3）.若pred是头节点，则唤醒node的后继节点。
+     *             2. 找到它在队列中非取消状态的前一节点pred;
+     *                1）.若node节点是尾节点，则前一节点的后一节点设为空；
+     *                2）.若pred不是头节点，且状态为SIGNAL，则后一节点设为node的后一节点；
+     *                3）.若pred是头节点，则唤醒node的后一节点。
      * PS: 该过程可以跟双链表删除一个节点的过程进行对比分析
+     *
+     * 总结来说，cancelAcquire就是用来维护链表正常状态的关系，
+     *
+     *             
      */
     private void cancelAcquire(Node node) {
         // Ignore if node doesn't exist
+        // node为空，啥都不干
         if (node == null)
             return;
 
@@ -888,29 +920,31 @@ public abstract class AbstractQueuedSynchronizer
         // Skip cancelled predecessors
         // 跳过取消状态的前驱节点
         Node pred = node.prev;
+        // while查找，直到找到非CANCELLED的节点
         while (pred.waitStatus > 0)
             node.prev = pred = pred.prev;
 
         // predNext is the apparent node to unsplice. CASes below will
         // fail if not, in which case, we lost race vs another cancel
         // or signal, so no further action is necessary.
-        // 前驱节点的后继节点引用
+        // 获取非CANCELLED状态节点的下一节点
         Node predNext = pred.next;
 
         // Can use unconditional write instead of CAS here.
         // After this atomic step, other Nodes can skip past us.
         // Before, we are free of interference from other threads.
-        // 将当前节点设置为取消状态
+        // 将当前节点设置为CANCELLED取消状态
         node.waitStatus = Node.CANCELLED;
 
         // If we are the tail, remove ourselves.
-        // 若该节点为尾节点（后面没其他节点了），将predNext指向null
+        // 若该节点为尾节点（后面没其他节点了），将predNext指向null，直接移除自己就可以了
         if (node == tail && compareAndSetTail(node, pred)) {
             compareAndSetNext(pred, predNext, null);
         } else {
             // If successor needs signal, try to set pred's next-link
             // so it will get one. Otherwise wake it up to propagate.
             int ws;
+            // 重新维护剩下的链表关系
             if (pred != head &&
                 ((ws = pred.waitStatus) == Node.SIGNAL ||
                  (ws <= 0 && compareAndSetWaitStatus(pred, ws, Node.SIGNAL))) &&
@@ -919,7 +953,7 @@ public abstract class AbstractQueuedSynchronizer
                 if (next != null && next.waitStatus <= 0)
                     compareAndSetNext(pred, predNext, next);
             } else {
-                // 前驱节点为头节点，表明当前节点为第一个，取消时唤醒他的下一个节点
+                // 唤醒node的下一个节点
                 unparkSuccessor(node);
             }
 
@@ -936,25 +970,31 @@ public abstract class AbstractQueuedSynchronizer
      * @param node the node
      * @return {@code true} if thread should block
      *
-     * 正如其名，shouldParkAfterFailedAcquire的作用就是判断当前线程在获取资源失败后，是否可以休眠（park）
+     * 正如其名，shouldParkAfterFailedAcquire的作用就是判断当前线程在获取资源失败后，是否可以休眠（park）, 即将node
+     * 放置在SIGNAL状态的前节点下，确保能被唤醒，在调用该方法后，CANCELLED状态的节点因为没有引用执行它将被GC
+     *
+     * 那么问题来了，什么时候节点会被设置为CANCELLED状态？
+     * 答案：就在try-finally的cancelAcquire(node)当中。当在acquireQueue取锁的过程中，抛出了异常，则会调用cancelAcquire，
+     *      将当前节点的状态设置为CANCELLED。
+     *
      *
      * 该方法的流程：
-     * 1. 若前驱节点的等待状态为SIGNAL，返回true，表示当前线程可以休眠（park）；
-     * 2. 若前驱节点是取消状态(ws > 0)，则将其清理出队列，以此类推；
-     * 3. 若前驱节点为0或PROPAGATE，则将其设置为SIGNAL状态。
+     * 1. 若前一节点的等待状态为SIGNAL(-1)，返回true，表示当前线程可以休眠（park）；
+     * 2. 若前一节点是取消状态(1)，则将其清理出队列，以此类推；
+     * 3. 若前驱节点为0或PROPAGATE(-3)，则将其设置为SIGNAL状态。
      */
     private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
-        // 前驱节点的等待状态
+        // 获取前一节点的状态
         int ws = pred.waitStatus;
-        // 若前驱节点的等待状态为SIGNAL，返回 true，表示当前线程可以休眠
+        // 若前一节点的状态为SIGNAL，前面提到表明为unpark下一个节点，则true，
         if (ws == Node.SIGNAL)
             /*
              * This node has already set status asking a release
              * to signal it, so it can safely park.
              */
             return true;
-        // 若前驱节点的状态大于0，表示前驱节点处于取消（CANCELLED）状态
-        // 则将前驱节点跳过（相当于踢出队列）
+        // 若前一节点的状态ws大于0，表示前一节点处于取消（CANCELLED = 1）状态，则向前找，直到找到正常状态的节点
+        // 则将前一节点跳过（相当于踢出队列）
         if (ws > 0) {
             /*
              * Predecessor was cancelled. Skip over predecessors and
@@ -963,14 +1003,16 @@ public abstract class AbstractQueuedSynchronizer
             do {
                 node.prev = pred = pred.prev;
             } while (pred.waitStatus > 0);
+            // 维护正常状态
             pred.next = node;
+            // 将前一个节点设置为SIGNAL
         } else {
             /*
              * waitStatus must be 0 or PROPAGATE.  Indicate that we
              * need a signal, but don't park yet.  Caller will need to
              * retry to make sure it cannot acquire before parking.
              */
-            // 此时 waitStatus 只能为0 或PROPAGATE状态，将前驱节点的等着状态设置为SIGNAL
+            // 此时 waitStatus 只能为0 或PROPAGATE状态，将前一节点的状态设置为SIGNAL
             compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
         }
         return false;
@@ -1023,10 +1065,12 @@ public abstract class AbstractQueuedSynchronizer
         try {
             // 中断标志位
             boolean interrupted = false;
+            // for循环来让线程等待，直至获得资源return，而return的条件就是当前的节点是第二节点，
+            // 且头节点已经释放了资源。
             for (;;) {
-                // 获取该节点的前驱节点
+                // 获取当前节点的前一节点
                 final Node p = node.predecessor();
-                // 若前驱节点为头节点，则尝试获取资源
+                // 若前一节点是头节点，且尝试获取到了资源
                 if (p == head && tryAcquire(arg)) {
                     // 若获取成功，则将该节点设置为头节点并返回
                     setHead(node);
@@ -1034,8 +1078,8 @@ public abstract class AbstractQueuedSynchronizer
                     failed = false;
                     return interrupted;
                 }
-                // 若上面条件不满足，即前驱节点不是头节点，或尝试获取失败
-                // 判断当前线程是否可以休眠
+                // 若上面条件不满足，即前一节点不是头节点，且尝试获取资源失败
+                // 判断当前线程是否可以休眠，被park，等待被唤醒
                 if (shouldParkAfterFailedAcquire(p, node) &&
                     parkAndCheckInterrupt())
                     interrupted = true;
