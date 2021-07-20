@@ -377,6 +377,18 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * below).
      *
      * 该变量是一个原子整型变量，保存了线程池的状态和线程数量
+     *
+     * 这里用了一个原子整型（AtomicInteger，可以理解为线程安全的Integer类，占用4个字节，32位）
+     * 变量ctl来表示线程池的运行状态和线程池内部的线程数量。其中高3位表示线程的运行状态，低29位表示
+     * 线程池中线程的数量。
+     *
+     * 线程池的状态有以下5种：
+     * 1.RUNNING：接受新的任务，并且处理任务队列中的任务；
+     * 2.SHUTDOWN：不接受新的任务，但处理任务队列中的任务；
+     * 3.STOP: 不接受新的任务，不处理任务队列中的任务，并且中断正在进行的任务；
+     * 4.TIDYING：所有的任务都已终结，工作线程的数量为0；
+     * 5.TERMINATED：执行terminated()方法后进入该状态，terminated()方法默认实现为空。
+     *
      */
     private final AtomicInteger ctl = new AtomicInteger(ctlOf(RUNNING, 0));
     private static final int COUNT_BITS = Integer.SIZE - 3;
@@ -447,6 +459,8 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * queues such as DelayQueues for which poll() is allowed to
      * return null even if it may later return non-null when delays
      * expire.
+     *
+     * 任务队列（阻塞队列）
      */
     private final BlockingQueue<Runnable> workQueue;
 
@@ -462,29 +476,39 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * also hold mainLock on shutdown and shutdownNow, for the sake of
      * ensuring workers set is stable while separately checking
      * permission to interrupt and actually interrupting.
+     *
+     * 互斥锁
      */
     private final ReentrantLock mainLock = new ReentrantLock();
 
     /**
      * Set containing all worker threads in pool. Accessed only when
      * holding mainLock.
+     *
+     * 工作线程集合
      */
     private final HashSet<Worker> workers = new HashSet<Worker>();
 
     /**
      * Wait condition to support awaitTermination
+     *
+     * 锁对应的条件
      */
     private final Condition termination = mainLock.newCondition();
 
     /**
      * Tracks largest attained pool size. Accessed only under
      * mainLock.
+     *
+     * 线程池创建的最大线程数量
      */
     private int largestPoolSize;
 
     /**
      * Counter for completed tasks. Updated only on termination of
      * worker threads. Accessed only under mainLock.
+     *
+     * 已完成任务的数量
      */
     private long completedTaskCount;
 
@@ -511,11 +535,15 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * will want to perform clean pool shutdown to clean up.  There
      * will likely be enough memory available for the cleanup code to
      * complete without encountering yet another OutOfMemoryError.
+     *
+     * 线程工厂类，用于创建线程
      */
     private volatile ThreadFactory threadFactory;
 
     /**
      * Handler called when saturated or shutdown in execute.
+     *
+     * 拒绝策略
      */
     private volatile RejectedExecutionHandler handler;
 
@@ -524,6 +552,8 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * Threads use this timeout when there are more than corePoolSize
      * present or if allowCoreThreadTimeOut. Otherwise they wait
      * forever for new work.
+     *
+     * 空闲线程的存活时间
      */
     private volatile long keepAliveTime;
 
@@ -531,6 +561,10 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * If false (default), core threads stay alive even when idle.
      * If true, core threads use keepAliveTime to time out waiting
      * for work.
+     *
+     * 核心线程是否允许超时
+     * 默认为false，表示核心线程即使处于空闲状态也继续存活；
+     * 若为true，核心线程同样受到keepAliveTime的超时约束
      */
     private volatile boolean allowCoreThreadTimeOut;
 
@@ -538,20 +572,33 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * Core pool size is the minimum number of workers to keep alive
      * (and not allow to time out etc) unless allowCoreThreadTimeOut
      * is set, in which case the minimum is zero.
+     *
+     * 核心池大小
      */
     private volatile int corePoolSize;
 
     /**
      * Maximum pool size. Note that the actual maximum is internally
      * bounded by CAPACITY.
+     *
+     * 最大池大小
      */
     private volatile int maximumPoolSize;
 
     /**
      * The default rejected execution handler
+     *
+     * 默认拒绝策略
      */
     private static final RejectedExecutionHandler defaultHandler =
         new AbortPolicy();
+
+    /**
+     * 这里有几个重要的成员变量：
+     * 1. corePoolSize：核心池大小
+     * 2. maximumPoolSize：最大池大小，线程池中能同时存在的最大线程数，大于等于corePoolSize;
+     * 3. workQueue：工作/任务队列，是一个阻塞队列。
+     */
 
     /**
      * Permission required for callers of shutdown and shutdownNow.
