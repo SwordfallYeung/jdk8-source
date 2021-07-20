@@ -776,7 +776,7 @@ public abstract class AbstractQueuedSynchronizer
      *
      * @param node the node
      *
-     * 唤醒node的后继节点
+     * 唤醒node的后一节点
      */
     private void unparkSuccessor(Node node) {
         /*
@@ -784,6 +784,7 @@ public abstract class AbstractQueuedSynchronizer
          * to clear in anticipation of signalling.  It is OK if this
          * fails or if status is changed by waiting thread.
          */
+        //消除小于0的状态
         int ws = node.waitStatus;
         if (ws < 0)
             compareAndSetWaitStatus(node, ws, 0);
@@ -794,9 +795,9 @@ public abstract class AbstractQueuedSynchronizer
          * traverse backwards from tail to find the actual
          * non-cancelled successor.
          */
-        // 后继节点
+        // 如果下一个节点是CANCELLED，则从尾部向头部找距离node最近的非CANCELLED节点
         Node s = node.next;
-        // 若后继节点是取消状态（ws > 0）
+        // 若后一节点为空或是取消状态（ws > 0）
         if (s == null || s.waitStatus > 0) {
             s = null;
             // 则从尾节点向前遍历，找到 node 节点后面一个未取消状态(ws <= 0)的节点
@@ -804,7 +805,7 @@ public abstract class AbstractQueuedSynchronizer
                 if (t.waitStatus <= 0)
                     s = t;
         }
-        // 唤醒node 节点的后继节点
+        // unpark找到的节点
         if (s != null)
             LockSupport.unpark(s.thread);
     }
