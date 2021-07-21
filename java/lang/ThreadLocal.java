@@ -118,6 +118,23 @@ import java.util.function.Supplier;
  * }
  * 上述，我们在处理一个请求之前获取用户的信息，在处理完请求之后，将用户信息清空
  *
+ * 主要方法小结：
+ * 1. set 方法
+ *    1)以当前 ThreadLocal 为 key、新增的 Object 为 value 组成一个 Entry，放入 ThreadLocalMap，也就是 Entry 数组中。
+ *    2)计算 Entry 的位置后
+ *       1.若该槽为空，直接放到这里；并清理一些过期的 Entry，必要时进行扩容。
+ *       2.当遇到散列冲突时，线性探测向后查找数组中为空的、或者已经过期的槽，用新值替换。
+ * 2. get 方法
+ *    1)以当前 ThreadLocal 为 key，从 Entry 数组中查找对应 Entry 的 value
+ *       1.若 ThreadLocalMap 未初始化，则用给定初始值将其初始化
+ *       2.若 ThreadLocalMap 已初始化，从 Entry 数组查找 key
+ * 3. remove 方法：以当前 ThreadLocal 为 key，从 Entry 数组清理掉对应的 Entry，并且再清理该位置后面的、过期的 Entry
+ *
+ * 小结
+ * 本文分析了 ThreadLocal 的主要方法实现，并分析了它可能存在内存泄漏的场景。
+ * 1.ThreadLocal 主要用于当前线程从共享变量中保存一份「副本」，常用的一个场景就是单点登录保存用户的登录信息。
+ * 2.ThreadLocal 将数据存储在 ThreadLocalMap 中，ThreadLocalMap 是由 Entry 构成的数组，结构有点类似 HashMap。
+ * 3.ThreadLocal 使用不当可能会造成内存泄漏。避免内存泄漏的方法是在方法调用结束前执行 ThreadLocal 的 remove 方法。
  */
 public class ThreadLocal<T> {
     /**
@@ -207,6 +224,14 @@ public class ThreadLocal<T> {
      * by an invocation of the {@link #initialValue} method.
      *
      * @return the current thread's value of this thread-local
+     *
+     * 获取ThreadLocal对应的Entry
+     *
+     * get 方法首先获取当前线程的 ThreadLocalMap 并判断：
+     *
+     * 1.若 Map 已存在，从 Map 中取值
+     * 2.若 Map 不存在，或者 Map 中获取的值为空，执行 setInitialValue 方法
+     * 3.setInitialValue 方法：获取/设置初始值
      */
     public T get() {
         Thread t = Thread.currentThread();
@@ -227,8 +252,17 @@ public class ThreadLocal<T> {
      * of set() in case user has overridden the set() method.
      *
      * @return the initial value
+     *
+     * 先取初始值，这个初始值默认为空（该方法是 protected，可以由子类初始化）。
+     *
+     * 1.若 Thread 的 ThreadLocalMap 已初始化，则将初始值存入 Map
+     * 2.否则，创建 ThreadLocalMap
+     * 3.返回初始值
+     *
+     * 除了初始值，其他逻辑跟 set 方法是一样的
      */
     private T setInitialValue() {
+        // 获取初始值
         T value = initialValue();
         Thread t = Thread.currentThread();
         ThreadLocalMap map = getMap(t);
@@ -271,6 +305,14 @@ public class ThreadLocal<T> {
      * {@code initialValue} method in the current thread.
      *
      * @since 1.5
+     *
+     * 移除ThreadLocal对应的Entry
+     *
+     * remove 方法的主要执行流程如下：
+     * 1.获取当前线程的 ThreadLocalMap
+     * 2.以当前 ThreadLocal 做为 key，从 Map 中查找相应的 Entry，将 Entry 的 key 置空
+     * 3.将该 ThreadLocal 对应的 Entry 置空，并向后遍历清理 Entry 数组，也就是 expungeStaleEntry
+     *   方法的操作，前面已经分析过了，这里不再赘述。
      */
      public void remove() {
          ThreadLocalMap m = getMap(Thread.currentThread());
@@ -486,10 +528,14 @@ public class ThreadLocal<T> {
          *
          * @param  key the thread local object
          * @return the entry associated with key, or null if no such
+         *
+         * 从Entry数组中获取给定key对应的Entry
          */
         private Entry getEntry(ThreadLocal<?> key) {
+            // 计算下标
             int i = key.threadLocalHashCode & (table.length - 1);
             Entry e = table[i];
+            // 查找命中
             if (e != null && e.get() == key)
                 return e;
             else
@@ -504,18 +550,24 @@ public class ThreadLocal<T> {
          * @param  i the table index for key's hash code
          * @param  e the entry at table[i]
          * @return the entry associated with key, or null if no such
+         *
+         * key 未命中
          */
         private Entry getEntryAfterMiss(ThreadLocal<?> key, int i, Entry e) {
             Entry[] tab = table;
             int len = tab.length;
 
+            // 遍历数组
             while (e != null) {
                 ThreadLocal<?> k = e.get();
                 if (k == key)
+                    // 是要找的key，返回
                     return e;
                 if (k == null)
+                    // Entry已过期，清理Entry
                     expungeStaleEntry(i);
                 else
+                    // 向后遍历
                     i = nextIndex(i, len);
                 e = tab[i];
             }
@@ -615,6 +667,14 @@ public class ThreadLocal<T> {
          * @param  value the value to be associated with key
          * @param  staleSlot index of the first stale entry encountered while
          *         searching for key.
+         *
+         * replaceStaleEntry 的主要执行流程如下：
+         *
+         * 1. 从 staleSlot 向前遍历数组，直到 Entry 为空时停止遍历。这一步的主要目的是查找 staleSlot 前面过期的 Entry 的数组下标 slotToExpunge。
+         * 2. 从 staleSlot 向后遍历数组
+         *    1.若 Entry 的 key 与给定的 key 相等，将该 Entry 与 staleSlot 下标的 Entry 互换位置。目的是为了让新增的 Entry 放到它「应该」在的位置。
+         *    2.若找不到相等的 key，说明该 key 对应的 Entry 不在数组中，将新值放到 staleSlot 位置。该操作其实就是处理哈希冲突的「线性探测」方法：当某个位置已被占用，向后探测下一个位置。
+         * 3. 若 staleSlot 前面存在过期的 Entry，则执行清理操作。
          */
         private void replaceStaleEntry(ThreadLocal<?> key, Object value,
                                        int staleSlot) {
@@ -626,6 +686,8 @@ public class ThreadLocal<T> {
             // We clean out whole runs at a time to avoid continual
             // incremental rehashing due to garbage collector freeing
             // up refs in bunches (i.e., whenever the collector runs).
+            // 从 staleSlot开始向前遍历，若遇到过期的槽（Entry的key为空），更新slotToExpunge
+            // 直到Entry为空停止遍历
             int slotToExpunge = staleSlot;
             for (int i = prevIndex(staleSlot, len);
                  (e = tab[i]) != null;
@@ -635,6 +697,8 @@ public class ThreadLocal<T> {
 
             // Find either the key or trailing null slot of run, whichever
             // occurs first
+            // 从staleSlot开始向后遍历，若遇到与当前key相等的Entry，更新旧值，并将二者换位置
+            // 目的是把它放到【应该】在的位置
             for (int i = nextIndex(staleSlot, len);
                  (e = tab[i]) != null;
                  i = nextIndex(i, len)) {
@@ -646,8 +710,10 @@ public class ThreadLocal<T> {
                 // encountered above it, can then be sent to expungeStaleEntry
                 // to remove or rehash all of the other entries in run.
                 if (k == key) {
+                    // 更新旧值
                     e.value = value;
 
+                    // 换位置
                     tab[i] = tab[staleSlot];
                     tab[staleSlot] = e;
 
@@ -666,6 +732,7 @@ public class ThreadLocal<T> {
             }
 
             // If key not found, put new entry in stale slot
+            // 若未找到key，说明Entry此前并不存在，新增
             tab[staleSlot].value = null;
             tab[staleSlot] = new Entry(key, value);
 
@@ -684,12 +751,25 @@ public class ThreadLocal<T> {
          * @return the index of the next null slot after staleSlot
          * (all between staleSlot and this slot will have been checked
          * for expunging).
+         *
+         * staleSlot表示过期的槽位（即Entry数组的下标）
+         *
+         * 该方法主要做了哪些工作呢？
+         *
+         * 1. 清空给定位置的 Entry
+         * 2. 从给定位置的下一个开始向后遍历数组
+         *    1.若遇到 Entry 为 null，结束遍历
+         *    2.若遇到 key 为空的 Entry（即过期的），就将该 Entry 置空
+         *    3.若遇到 key 不为空的 Entry，而且经过计算，该 Entry 并不在它「应该」在的位置，则将其移动到它「应该」在的位置
+         * 3. 返回 staleSlot 后面的、Entry 为 null 的索引下标
+         * 4. cleanSomeSlots：清理一些槽（Slot）
          */
         private int expungeStaleEntry(int staleSlot) {
             Entry[] tab = table;
             int len = tab.length;
 
             // expunge entry at staleSlot
+            // 1. 将给定位置的Entry置为null
             tab[staleSlot].value = null;
             tab[staleSlot] = null;
             size--;
@@ -697,15 +777,20 @@ public class ThreadLocal<T> {
             // Rehash until we encounter null
             Entry e;
             int i;
+            // 遍历数组
             for (i = nextIndex(staleSlot, len);
                  (e = tab[i]) != null;
                  i = nextIndex(i, len)) {
+                // 获取Entry的key
                 ThreadLocal<?> k = e.get();
                 if (k == null) {
+                    // 若key为null，表示Entry过期，将Entry置空
                     e.value = null;
                     tab[i] = null;
                     size--;
                 } else {
+                    // key不为空，表示Entry未过期
+                    // 计算key的位置，若Entry不在它【应该】在的位置，把它移到【应该】在的位置
                     int h = k.threadLocalHashCode & (len - 1);
                     if (h != i) {
                         tab[i] = null;
@@ -744,6 +829,14 @@ public class ThreadLocal<T> {
          * seems to work well.)
          *
          * @return true if any stale entries have been removed.
+         *
+         * 该方法做了什么呢？从给定位置的下一个开始扫描数组，若遇到 key 为空的 Entry（过期的），则清理该位置及其后面过期的槽。
+         *
+         * 值得注意的是，该方法循环执行的次数为 log(n)。由于该方法是在 set 方法内部被调用的，也就是新增/更新时：
+         *
+         * 1.如果不扫描和清理，set 方法执行速度很快，但是会存在一些垃圾（过期的 Entry）；
+         * 2.如果每次都扫描清理，不会存在垃圾，但是插入性能会降低到 O(n)。
+         * 因此，这个次数其实就一种平衡策略：Entry 数组较小时，就少清理几次；数组较大时，就多清理几次。
          */
         private boolean cleanSomeSlots(int i, int n) {
             boolean removed = false;
@@ -752,9 +845,11 @@ public class ThreadLocal<T> {
             do {
                 i = nextIndex(i, len);
                 Entry e = tab[i];
+                // Entry不为空，key为空，即Entry过期
                 if (e != null && e.get() == null) {
                     n = len;
                     removed = true;
+                    // 清理i后面连续过期的Entry，直到Entry为null，返回该Entry的下标
                     i = expungeStaleEntry(i);
                 }
             } while ( (n >>>= 1) != 0);
@@ -765,8 +860,11 @@ public class ThreadLocal<T> {
          * Re-pack and/or re-size the table. First scan the entire
          * table removing stale entries. If this doesn't sufficiently
          * shrink the size of the table, double the table size.
+         *
+         * 调整Entry数组
          */
         private void rehash() {
+            // 清理数组中过期的Entry
             expungeStaleEntries();
 
             // Use lower threshold for doubling to avoid hysteresis
@@ -776,22 +874,34 @@ public class ThreadLocal<T> {
 
         /**
          * Double the capacity of the table.
+         *
+         * 该方法的作用是 Entry 数组扩容，主要流程：
+         *
+         * 1.创建一个新数组，长度为原数组的 2 倍；
+         * 2.从下标 0 开始遍历旧数组的所有元素
+         *   1.若元素已过期（key 为空），则将 value 也置空
+         *   2.将未过期的元素移到新数组
          */
         private void resize() {
             Entry[] oldTab = table;
             int oldLen = oldTab.length;
+            // 新长度为旧长度的两倍
             int newLen = oldLen * 2;
             Entry[] newTab = new Entry[newLen];
             int count = 0;
 
+            // 遍历旧的Entry数组，将数组中的值移到新数组中
             for (int j = 0; j < oldLen; ++j) {
                 Entry e = oldTab[j];
                 if (e != null) {
                     ThreadLocal<?> k = e.get();
+                    // 若Entry的key已过期，则将Entry清理掉
                     if (k == null) {
                         e.value = null; // Help the GC
                     } else {
+                        // 计算在新数组中的位置
                         int h = k.threadLocalHashCode & (newLen - 1);
+                        // 哈希冲突，线性探测下一个位置
                         while (newTab[h] != null)
                             h = nextIndex(h, newLen);
                         newTab[h] = e;
@@ -800,6 +910,7 @@ public class ThreadLocal<T> {
                 }
             }
 
+            // 设置新的阈值
             setThreshold(newLen);
             size = count;
             table = newTab;
@@ -807,6 +918,14 @@ public class ThreadLocal<T> {
 
         /**
          * Expunge all stale entries in the table.
+         *
+         * 从头开始清理整个Entry数组
+         *
+         * 该方法主要作用：
+         *
+         * 1. 清理数组中过期的 Entry
+         * 2. 若清理后 Entry 的数量大于等于 threshold 的 3/4，则执行 resize 方法进行扩容
+         * 3. resize 方法：Entry 数组扩容
          */
         private void expungeStaleEntries() {
             Entry[] tab = table;
