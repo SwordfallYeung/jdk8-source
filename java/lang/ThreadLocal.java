@@ -70,6 +70,54 @@ import java.util.function.Supplier;
  *
  * @author  Josh Bloch and Doug Lea
  * @since   1.2
+ *
+ * 应用场景：
+ * ThreadLocal的应用场景不少，简单的例子：单点登录拦截。
+ * 也就是在处理一个HTTP请求之前，判断用户是否登录：
+ * 1. 若未登录，跳转到登陆页面；
+ * 2. 若已登录，获取并保存用户的登录信息；
+ *
+ * 先定义一个UserInfoHolder类保存用户的登录信息，其内部用ThreadLocal存储，示例如下：
+ * public class UserInfoHolder{
+ *     private static final ThreadLocal<Map<String, String>> USER_INFO_THREAD_LOCAL = new ThreadLocal<>();
+ *
+ *     public static void set(Map<String, String> map){
+ *         USER_INFO_THREAD_LOCAL.set(map);
+ *     }
+ *
+ *     public static Map<String, String> get(){
+ *         return USER_INFO_THREAD_LOCAL.get();
+ *     }
+ *
+ *     public static void clear() {
+ *         USER_INFO_THREAD_LOCAL.remove();
+ *     }
+ * }
+ *
+ * 通过UserInfoHolder可以存储和获取用户的登录信息，以便在业务中使用
+ * Spring项目中，如果我们想在处理一个HTTP请求之前或之后做些额外的处理，通常定一个类继承HandlerInterceptorAdapter，
+ * 然后重写它的一些方法。
+ *
+ * public class LoginInterceptor extends HandlerInterceptorAdapter {
+ *     // ...
+ *     @Override
+ *     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
+ *             throws Exception {
+ *         // ...
+ *         // 请求执行前，获取用户登录信息并保存
+ *         Map<String, String> userInfoMap = getUserInfo();
+ *         UserInfoHolder.set(userInfoMap);
+ *         return true;
+ *     }
+ *
+ *     @Override
+ *     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
+ *         // 请求执行后，清理掉用户信息
+ *         UserInfoHolder.clear();
+ *     }
+ * }
+ * 上述，我们在处理一个请求之前获取用户的信息，在处理完请求之后，将用户信息清空
+ *
  */
 public class ThreadLocal<T> {
     /**
@@ -144,6 +192,8 @@ public class ThreadLocal<T> {
     /**
      * Creates a thread local variable.
      * @see #withInitial(java.util.function.Supplier)
+     *
+     * 只有一个无参构造器
      */
     public ThreadLocal() {
     }
