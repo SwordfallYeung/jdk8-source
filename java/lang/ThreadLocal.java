@@ -129,6 +129,8 @@ public class ThreadLocal<T> {
      * in the common case where consecutively constructed ThreadLocals
      * are used by the same threads, while remaining well-behaved in
      * less common cases.
+     *
+     * 生成ThreadLocal的hash码，用于计算在Entry数组中的位置
      */
     private final int threadLocalHashCode = nextHashCode();
 
@@ -245,9 +247,13 @@ public class ThreadLocal<T> {
      *
      * @param value the value to be stored in the current thread's copy of
      *        this thread-local.
+     *
+     * 新增/更新Entry
      */
     public void set(T value) {
+        // 获取当前线程
         Thread t = Thread.currentThread();
+        // 从Thread中获取ThreadLocalMap
         ThreadLocalMap map = getMap(t);
         if (map != null)
             map.set(this, value);
@@ -278,6 +284,8 @@ public class ThreadLocal<T> {
      *
      * @param  t the current thread
      * @return the map
+     *
+     * threadLocals是Thread持有的一个ThreadLocalMap引用，默认是null
      */
     ThreadLocalMap getMap(Thread t) {
         return t.threadLocals;
@@ -289,6 +297,8 @@ public class ThreadLocal<T> {
      *
      * @param t the current thread
      * @param firstValue value for the initial entry of the map
+     *
+     * 若从当前Thread拿到的ThreadLocalMap为空，表示该属性并未初始化，执行createMap初始化：
      */
     void createMap(Thread t, T firstValue) {
         t.threadLocals = new ThreadLocalMap(this, firstValue);
@@ -344,6 +354,11 @@ public class ThreadLocal<T> {
      * WeakReferences for keys. However, since reference queues are not
      * used, stale entries are guaranteed to be removed only when
      * the table starts running out of space.
+     *
+     * 内部嵌套类
+     *
+     * 由于ThreadLocal的主要操作实际都是通过ThreadLocalMap的方法实现的，
+     * 因此先分析ThreadLocalMap的主要代码。
      */
     static class ThreadLocalMap {
 
@@ -367,27 +382,37 @@ public class ThreadLocal<T> {
 
         /**
          * The initial capacity -- MUST be a power of two.
+         *
+         * 初始容量，必须是2的次幂
          */
         private static final int INITIAL_CAPACITY = 16;
 
         /**
          * The table, resized as necessary.
          * table.length MUST always be a power of two.
+         *
+         * 存储数据的数组
          */
         private Entry[] table;
 
         /**
          * The number of entries in the table.
+         *
+         * table中的Entry数量
          */
         private int size = 0;
 
         /**
          * The next size value at which to resize.
+         *
+         * 扩容的阈值
          */
         private int threshold; // Default to 0
 
         /**
          * Set the resize threshold to maintain at worst a 2/3 load factor.
+         *
+         * 设置扩容阈值
          */
         private void setThreshold(int len) {
             threshold = len * 2 / 3;
@@ -411,6 +436,8 @@ public class ThreadLocal<T> {
          * Construct a new map initially containing (firstKey, firstValue).
          * ThreadLocalMaps are constructed lazily, so we only create
          * one when we have at least one entry to put in it.
+         *
+         * 第一次添加元素使用的构造器
          */
         ThreadLocalMap(ThreadLocal<?> firstKey, Object firstValue) {
             table = new Entry[INITIAL_CAPACITY];
@@ -500,6 +527,19 @@ public class ThreadLocal<T> {
          *
          * @param key the thread local object
          * @param value the value to be set
+         *
+         * 若已存在，则调用ThreadLocalMap的set方法
+         *
+         * 总结下 set 方法主要流程：
+         *
+         * 首先根据 key 的 threadLocalHashCode 计算它的数组下标：
+         *
+         * 1. 如果数组下标的 Entry 不为空，表示该位置已经有元素。由于可能存在哈希冲突，
+         *    因此这个位置的元素可能并不是要找的元素，所以遍历数组去比较
+         *    1.如果找到等于当前 key 的 Entry，则用新值替换旧值，返回。
+         *    2.如果遍历过程中，遇到 Entry 不为空、但是 Entry 的 key 为空的情况，则会做一些清理工作。
+         * 2. 如果数组下标的 Entry 为空，直接将元素放到这里，必要时进行扩容。
+         * 3. replaceStaleEntry：替换过期的值，并清理一些过期的 Entry
          */
         private void set(ThreadLocal<?> key, Object value) {
 
@@ -510,26 +550,35 @@ public class ThreadLocal<T> {
 
             Entry[] tab = table;
             int len = tab.length;
+            // 1. 计算key在数组中的下标i
             int i = key.threadLocalHashCode & (len-1);
 
+            // 1.1 若数组下标为i的位置有元素
+            // 判断i位置的Entry是否为空；不为空则从i开始向后遍历数组
             for (Entry e = tab[i];
                  e != null;
                  e = tab[i = nextIndex(i, len)]) {
                 ThreadLocal<?> k = e.get();
 
+                // 索引为i的元素就是要查找的元素，用新值覆盖旧值，到此返回
                 if (k == key) {
                     e.value = value;
                     return;
                 }
 
+                // 索引为i的元素并非要查找的元素，且该位置中Entry的Key已经是null
+                // Key为null表明该Entry已经过期了，此时用新值来替换这个位置的过期值
                 if (k == null) {
+                    // 替换过期的Entry
                     replaceStaleEntry(key, value, i);
                     return;
                 }
             }
 
+            // 1.2 若数组下标为i的位置为空，将要存储的元素放到i的位置
             tab[i] = new Entry(key, value);
             int sz = ++size;
+            // 若未清理过期的Entry，且数组的大小达到阈值，执行rehash操作
             if (!cleanSomeSlots(i, sz) && sz >= threshold)
                 rehash();
         }
